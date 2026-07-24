@@ -1,0 +1,67 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../lib/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserType {
+  SUPERADMIN
+  ADMIN
+  EMPLOYEE
+}
+
+model User {
+  id           String     @id @default(cuid())
+  keycloakId   String     @unique
+  name         String
+  email        String     @unique
+  userType     UserType
+  role         Role?      @relation(fields: [roleId], references: [id])
+  roleId       String?
+  createdBy    User?      @relation("UserCreatedBy", fields: [createdById], references: [id])
+  createdById  String?
+  createdUsers User[]     @relation("UserCreatedBy")
+  auditLogs    AuditLog[]
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+}
+
+model Role {
+  id        String       @id @default(cuid())
+  name      String       @unique
+  users     User[]
+  access    RoleAccess[]
+  createdAt DateTime     @default(now())
+}
+
+model Application {
+  id          String       @id @default(cuid())
+  name        String       @unique
+  description String?
+  url         String
+  access      RoleAccess[]
+  createdAt   DateTime     @default(now())
+}
+
+// Access Matrix: presence of a row = that Role can access that Application
+model RoleAccess {
+  id            String      @id @default(cuid())
+  role          Role        @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  roleId        String
+  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  applicationId String
+
+  @@unique([roleId, applicationId])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  user      User?    @relation(fields: [userId], references: [id])
+  userId    String?
+  action    String
+  details   String?
+  createdAt DateTime @default(now())
+}
