@@ -39,19 +39,21 @@ Entities:
 
 Bootstrap note: the very first SuperAdmin account can't be created through the app (nobody exists yet to create it) — it's created once directly in Keycloak's admin console during setup.
 
-## 4. Project setup (in progress)
+## 4. Project setup (done)
 
 - Layout: monorepo, `apps/portal` + `apps/finance-app`, no workspace tooling (kept simple — two independent Next.js apps, no Turborepo/npm workspaces).
 - Tools confirmed available: Node 24.18, npm 10.9, Docker 29.6, Compose v5.3, git 2.55.
-- `apps/portal` scaffolded: Next.js 16, TypeScript, Tailwind, App Router, ESLint. Default starter page only — no auth/DB/features yet.
-- Pending: scaffold `apps/finance-app`, add `docker-compose.yml` (Postgres + Keycloak), wire Prisma.
+- Both apps scaffolded: Next.js 16, TypeScript, Tailwind, App Router, ESLint. Default starter pages only — no auth/RBAC features yet.
+- `docker-compose.yml` at root: Postgres 16 (port 5432) + Keycloak 26 in dev mode (port 8080), both with persisted volumes. `.env.example` documents the vars.
+- Prisma wired in `apps/portal`: schema matches the data model above (User, UserType, Role, Application, RoleAccess = Access Matrix, AuditLog). Initial migration applied and verified against the running Postgres container. Client generated to `lib/generated/prisma`.
+- Not yet done: Keycloak realm/client configuration, Auth.js wiring — that's step 5.
 
 ## Roadmap (7 steps, working through in order)
 
 1. ✅ Finalize requirements
 2. ✅ Design data model
 3. ✅ UI wireframes
-4. 🔄 Project setup (tools ✅, folder layout ✅, portal scaffolded ✅, finance-app + Docker Compose pending)
-5. ⏳ Auth/SSO implementation
+4. ✅ Project setup (both apps scaffolded, Docker Compose up, Prisma wired + migrated)
+5. 🔄 Auth/SSO implementation
 6. ⏳ Build modules incrementally (users, roles, matrix, audit)
 7. ⏳ Testing + documentation
