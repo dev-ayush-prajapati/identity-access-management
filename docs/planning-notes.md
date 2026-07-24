@@ -56,7 +56,7 @@ Bootstrap note: the very first SuperAdmin account can't be created through the a
 4. ✅ Project setup (both apps scaffolded, Docker Compose up, Prisma wired + migrated)
 5. 🔄 Auth/SSO implementation
    - ✅ 5a: Keycloak realm `iam-portal` defined in `keycloak/realm-export.json`, auto-imported by Docker Compose (`start-dev --import-realm`). Two confidential clients: `portal` (redirect `http://localhost:3000/*`) and `finance-app` (redirect `http://localhost:3001/*`). Client secrets are dev-only placeholders (`*-dev-secret-change-me`) — fine for local, must rotate for anything beyond localhost. No realm roles/users defined — Keycloak only handles identity; UserType/Role stay in Postgres per the architecture split.
-   - ⏳ 5b: bootstrap first SuperAdmin (Keycloak account + matching Postgres row)
+   - ✅ 5b: bootstrap first SuperAdmin. `scripts/bootstrap-superadmin.ts` creates the Keycloak account (temp password, forced reset) + matching Postgres `User` row (userType SUPERADMIN), linked by keycloakId. Reads name/email/password from env, idempotent (skips if already exists). Along the way: Prisma 7 requires an explicit driver adapter to connect — switched generator from `prisma-client` to `prisma-client-js`, added `@prisma/adapter-pg`, and introduced `lib/prisma.ts` as the shared singleton client used by the app and scripts alike.
    - ⏳ 5c: Auth.js + Keycloak provider in `apps/portal`
    - ⏳ 5d: sign-in callback — look up/create Postgres User by keycloakId, attach userType/role to session
    - ⏳ 5e: middleware route protection
