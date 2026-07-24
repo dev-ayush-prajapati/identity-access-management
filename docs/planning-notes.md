@@ -55,5 +55,12 @@ Bootstrap note: the very first SuperAdmin account can't be created through the a
 3. ✅ UI wireframes
 4. ✅ Project setup (both apps scaffolded, Docker Compose up, Prisma wired + migrated)
 5. 🔄 Auth/SSO implementation
-6. ⏳ Build modules incrementally (users, roles, matrix, audit)
+   - ✅ 5a: Keycloak realm `iam-portal` defined in `keycloak/realm-export.json`, auto-imported by Docker Compose (`start-dev --import-realm`). Two confidential clients: `portal` (redirect `http://localhost:3000/*`) and `finance-app` (redirect `http://localhost:3001/*`). Client secrets are dev-only placeholders (`*-dev-secret-change-me`) — fine for local, must rotate for anything beyond localhost. No realm roles/users defined — Keycloak only handles identity; UserType/Role stay in Postgres per the architecture split.
+   - ⏳ 5b: bootstrap first SuperAdmin (Keycloak account + matching Postgres row)
+   - ⏳ 5c: Auth.js + Keycloak provider in `apps/portal`
+   - ⏳ 5d: sign-in callback — look up/create Postgres User by keycloakId, attach userType/role to session
+   - ⏳ 5e: middleware route protection
+   - ⏳ 5f: minimal Auth.js in `apps/finance-app` to prove SSO
+   - ⏳ 5g: post-login redirect by UserType
+6. ⏳ Build modules incrementally (users, roles, matrix, audit) — note: User Management will need a Keycloak Admin API wrapper, since creating a user in-app auto-creates their Keycloak login (temp password, forced reset on first login)
 7. ⏳ Testing + documentation
