@@ -66,5 +66,15 @@ Bootstrap note: the very first SuperAdmin account can't be created through the a
      - **Can't call `signIn()` in a Server Component**: tried to auto-skip Auth.js's provider-picker page by calling `signIn("keycloak")` directly in the page — failed, since it needs to write CSRF/PKCE cookies, which Next.js only allows in a Server Action or Route Handler. Reverted to `redirect("/api/auth/signin")` — one click on "Sign in with Keycloak" is expected/required; the actual SSO proof is that the click doesn't ask for a password.
      - Verified live end-to-end (including in a fresh incognito window): log in on Portal once, then finance-app's login click passes straight through with no password prompt.
    - ✅ 5g: `apps/portal/app/page.tsx` — if logged in, redirects immediately based on `session.user.userType` (SUPERADMIN → `/superadmin`, ADMIN → `/admin`, EMPLOYEE → `/dashboard`); if not, shows a minimal "Sign in" link. No manual dashboard picking. Verified live: logged in as SuperAdmin, visiting `/` lands on `/superadmin`.
-6. ⏳ Build modules incrementally (users, roles, matrix, audit) — note: User Management will need a Keycloak Admin API wrapper, since creating a user in-app auto-creates their Keycloak login (temp password, forced reset on first login)
+6. 🔄 Build modules incrementally
+   - ✅ **Application Management** (SuperAdmin, `/superadmin`): CRUD for the app catalog. `app/api/applications/route.ts` (GET/POST) + `app/api/applications/[id]/route.ts` (PATCH/DELETE), each with its own server-side `requireUserType` check (`lib/api-auth.ts`) — API routes aren't covered by the middleware matcher, so they gate themselves rather than relying on the page being protected. Every mutation writes an `AuditLog` row (`lib/audit.ts`).
+     - Set up shadcn/ui (`base-nova` style — uses **Base UI**, not Radix; `asChild` doesn't exist here, use the `render` prop instead) + Kokonut UI as a registry on top of it (`@kokonutui` in `components.json`, installs via the shadcn CLI itself — no separate tooling). Used tastefully: `GradientButton` for the primary CTA, `Loader` installed but not force-fit anywhere yet.
+     - Real bugs hit: (1) `ReturnType<typeof auth>` in `lib/api-auth.ts` resolved to the wrong overload of Auth.js's overloaded `auth` function — fixed by importing `Session` type directly from `next-auth` instead of reflecting off the function. (2) Copied a Radix `asChild` pattern for `DropdownMenuTrigger` out of habit — Base UI has no such prop, needs `render={<Button>...}` instead.
+     - Verified live by hand: create, edit, delete all confirmed working.
+   - ⏳ Role Management
+   - ⏳ User Management (SuperAdmin creates Admins, Admin creates Employees) — needs a Keycloak Admin API wrapper, since creating a user in-app auto-creates their Keycloak login (temp password, forced reset on first login)
+   - ⏳ Access Matrix
+   - ⏳ Employee dashboard (app tiles)
+   - ⏳ Profile page
+   - ⏳ Audit Logs viewer (the log-writing itself is already happening, per module, as each is built)
 7. ⏳ Testing + documentation
