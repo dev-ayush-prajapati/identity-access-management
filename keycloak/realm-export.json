@@ -1,0 +1,35 @@
+{
+  "realm": "iam-portal",
+  "enabled": true,
+  "sslRequired": "none",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "clients": [
+    {
+      "clientId": "portal",
+      "name": "IAM Portal",
+      "enabled": true,
+      "publicClient": false,
+      "secret": "portal-dev-secret-change-me",
+      "protocol": "openid-connect",
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "redirectUris": ["http://localhost:3000/*"],
+      "webOrigins": ["http://localhost:3000"]
+    },
+    {
+      "clientId": "finance-app",
+      "name": "Finance App (SSO proof stub)",
+      "enabled": true,
+      "publicClient": false,
+      "secret": "finance-app-dev-secret-change-me",
+      "protocol": "openid-connect",
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "redirectUris": ["http://localhost:3001/*"],
+      "webOrigins": ["http://localhost:3001"]
+    }
+  ]
+}

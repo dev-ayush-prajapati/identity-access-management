@@ -39,19 +39,29 @@ Entities:
 
 Bootstrap note: the very first SuperAdmin account can't be created through the app (nobody exists yet to create it) — it's created once directly in Keycloak's admin console during setup.
 
-## 4. Project setup (in progress)
+## 4. Project setup (done)
 
 - Layout: monorepo, `apps/portal` + `apps/finance-app`, no workspace tooling (kept simple — two independent Next.js apps, no Turborepo/npm workspaces).
 - Tools confirmed available: Node 24.18, npm 10.9, Docker 29.6, Compose v5.3, git 2.55.
-- `apps/portal` scaffolded: Next.js 16, TypeScript, Tailwind, App Router, ESLint. Default starter page only — no auth/DB/features yet.
-- Pending: scaffold `apps/finance-app`, add `docker-compose.yml` (Postgres + Keycloak), wire Prisma.
+- Both apps scaffolded: Next.js 16, TypeScript, Tailwind, App Router, ESLint. Default starter pages only — no auth/RBAC features yet.
+- `docker-compose.yml` at root: Postgres 16 (port 5432) + Keycloak 26 in dev mode (port 8080), both with persisted volumes. `.env.example` documents the vars.
+- Prisma wired in `apps/portal`: schema matches the data model above (User, UserType, Role, Application, RoleAccess = Access Matrix, AuditLog). Initial migration applied and verified against the running Postgres container. Client generated to `lib/generated/prisma`.
+- Not yet done: Keycloak realm/client configuration, Auth.js wiring — that's step 5.
 
 ## Roadmap (7 steps, working through in order)
 
 1. ✅ Finalize requirements
 2. ✅ Design data model
 3. ✅ UI wireframes
-4. 🔄 Project setup (tools ✅, folder layout ✅, portal scaffolded ✅, finance-app + Docker Compose pending)
-5. ⏳ Auth/SSO implementation
-6. ⏳ Build modules incrementally (users, roles, matrix, audit)
+4. ✅ Project setup (both apps scaffolded, Docker Compose up, Prisma wired + migrated)
+5. 🔄 Auth/SSO implementation
+   - ✅ 5a: Keycloak realm `iam-portal` defined in `keycloak/realm-export.json`, auto-imported by Docker Compose (`start-dev --import-realm`). Two confidential clients: `portal` (redirect `http://localhost:3000/*`) and `finance-app` (redirect `http://localhost:3001/*`). Client secrets are dev-only placeholders (`*-dev-secret-change-me`) — fine for local, must rotate for anything beyond localhost. No realm roles/users defined — Keycloak only handles identity; UserType/Role stay in Postgres per the architecture split.
+   - ✅ 5b: bootstrap first SuperAdmin. `scripts/bootstrap-superadmin.ts` creates the Keycloak account (temp password, forced reset) + matching Postgres `User` row (userType SUPERADMIN), linked by keycloakId. Reads name/email/password from env, idempotent (skips if already exists). Along the way: Prisma 7 requires an explicit driver adapter to connect — switched generator from `prisma-client` to `prisma-client-js`, added `@prisma/adapter-pg`, and introduced `lib/prisma.ts` as the shared singleton client used by the app and scripts alike.
+   - ✅ 5c: Auth.js v5 (beta — needed for App Router + middleware, v4 doesn't fit) + Keycloak provider wired in `apps/portal` (`auth.ts`, route handler at `app/api/auth/[...nextauth]/route.ts`). Fully verified end-to-end by hand: sign-in → Keycloak login → forced password reset → lands back on Portal logged in, `/api/auth/session` returns the session.
+   - ✅ 5d: `auth.ts` callbacks — `signIn` rejects any Keycloak login with no matching Postgres User (keycloakId lookup); `jwt` attaches userId/userType/roleId to the token on initial sign-in; `session` exposes them on `session.user`. No auto-create — a User row must already exist (created by SuperAdmin/Admin, or the bootstrap script). Verified live: `/api/auth/session` returns `userType: "SUPERADMIN"`, `roleId: null` for the bootstrapped account. Hit a real Auth.js v5 typing gap (session-callback's `token` param doesn't pick up the `next-auth/jwt` module augmentation) — fixed with explicit casts, documented inline. Also excluded `lib/generated/prisma` from ESLint (generated code was failing lint).
+   - ✅ 5e: `middleware.ts` protects `/superadmin/*` (SUPERADMIN), `/admin/*` (ADMIN), `/dashboard/*` (EMPLOYEE), `/profile/*` (any logged-in user) — matcher-scoped, everything else passes through untouched. Not logged in → redirect to sign-in with callbackUrl; wrong userType for a zone → redirect to `/`. Minimal placeholder pages created under each prefix just to prove the middleware (real content is step 6).
+     - Hit a real Auth.js v5 + Prisma conflict: middleware runs in the Edge runtime, which can't load Prisma's client (uses `node:crypto`, `process.stdout`) — importing `auth.ts` from `middleware.ts` caused 500s on every protected route. Fixed with the standard split: `auth.config.ts` (edge-safe — providers + the DB-free `session` callback) used directly by `middleware.ts`; `auth.ts` (Node-only — adds the Prisma-dependent `signIn`/`jwt` callbacks) used by route handlers/Server Components. Verified: all 4 zones behave correctly, both unauthenticated (curl) and authenticated (manual browser test) cases.
+   - ⏳ 5f: minimal Auth.js in `apps/finance-app` to prove SSO
+   - ⏳ 5g: post-login redirect by UserType
+6. ⏳ Build modules incrementally (users, roles, matrix, audit) — note: User Management will need a Keycloak Admin API wrapper, since creating a user in-app auto-creates their Keycloak login (temp password, forced reset on first login)
 7. ⏳ Testing + documentation

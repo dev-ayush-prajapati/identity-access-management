@@ -1,0 +1,39 @@
+# Local development only. Not for production, shared hosting, or any
+# network-reachable deployment. Ports are bound to 127.0.0.1 (loopback)
+# so these services are never exposed to the LAN — important on shared
+# or corporate networks. Change the default credentials in .env before
+# using this anywhere beyond your own machine.
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-iam_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-iam_password}
+      POSTGRES_DB: ${POSTGRES_DB:-iam_db}
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-iam_user}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0
+    restart: unless-stopped
+    command: start-dev --import-realm
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN_USER:-admin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - keycloak_data:/opt/keycloak/data
+      - ./keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
+
+volumes:
+  postgres_data:
+  keycloak_data:
