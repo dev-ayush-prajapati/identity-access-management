@@ -13,6 +13,15 @@ export const authConfig: NextAuthConfig = {
       issuer: process.env.AUTH_KEYCLOAK_ISSUER,
     }),
   ],
+  // In local dev, portal and finance-app are both "localhost" (just
+  // different ports) — browsers share cookies across ports on the same
+  // hostname. Without a distinct name here, finance-app would receive
+  // Portal's session cookie and fail to decrypt it (different secret).
+  cookies: {
+    sessionToken: {
+      name: "portal-session-token",
+    },
+  },
   callbacks: {
     session({ session, token }) {
       // Just copies what the Node-only jwt callback (in auth.ts) already
