@@ -71,7 +71,9 @@ Bootstrap note: the very first SuperAdmin account can't be created through the a
      - Set up shadcn/ui (`base-nova` style — uses **Base UI**, not Radix; `asChild` doesn't exist here, use the `render` prop instead) + Kokonut UI as a registry on top of it (`@kokonutui` in `components.json`, installs via the shadcn CLI itself — no separate tooling). Used tastefully: `GradientButton` for the primary CTA, `Loader` installed but not force-fit anywhere yet.
      - Real bugs hit: (1) `ReturnType<typeof auth>` in `lib/api-auth.ts` resolved to the wrong overload of Auth.js's overloaded `auth` function — fixed by importing `Session` type directly from `next-auth` instead of reflecting off the function. (2) Copied a Radix `asChild` pattern for `DropdownMenuTrigger` out of habit — Base UI has no such prop, needs `render={<Button>...}` instead.
      - Verified live by hand: create, edit, delete all confirmed working.
-   - ⏳ Role Management
+   - ✅ **Role Management** (Admin, `/admin`): CRUD for dynamic roles (HR, Finance, IT...). Same pattern as Application Management: `app/api/roles/route.ts` + `app/api/roles/[id]/route.ts`, `requireUserType` per route, audit logging. GET readable by SUPERADMIN+ADMIN, writes ADMIN-only. Delete is blocked (409) if any User still references the role — must reassign them first, not left to an implicit DB cascade/restrict. `/admin` shows Role Management directly for now, same flat pattern as `/superadmin`; will revisit routing once Admin gets more sections.
+     - No Admin-tier account existed yet to test with (only the bootstrapped SuperAdmin) — created one throwaway test Admin via a temporary, uncommitted script (deleted immediately after use). The real way to create Admins is the next module (User Management).
+     - Verified live: landed on `/admin` as the test Admin, create/edit/delete all confirmed working.
    - ⏳ User Management (SuperAdmin creates Admins, Admin creates Employees) — needs a Keycloak Admin API wrapper, since creating a user in-app auto-creates their Keycloak login (temp password, forced reset on first login)
    - ⏳ Access Matrix
    - ⏳ Employee dashboard (app tiles)
