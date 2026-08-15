@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireUserType } from "@/lib/api-auth";
 import { logAudit } from "@/lib/audit";
+import { isHttpUrl } from "@/lib/validate-url";
 
 export async function PATCH(
   req: NextRequest,
@@ -19,6 +20,10 @@ export async function PATCH(
 
   if (Object.keys(data).length === 0) {
     return NextResponse.json({ error: "No valid fields to update" }, { status: 400 });
+  }
+
+  if (data.url && !isHttpUrl(data.url)) {
+    return NextResponse.json({ error: "url must be a valid http(s) URL" }, { status: 400 });
   }
 
   const application = await prisma.application

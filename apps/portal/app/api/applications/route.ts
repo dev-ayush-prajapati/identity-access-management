@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireUserType } from "@/lib/api-auth";
 import { logAudit } from "@/lib/audit";
+import { isHttpUrl } from "@/lib/validate-url";
 
 export async function GET() {
   const { error } = await requireUserType(["SUPERADMIN", "ADMIN"]);
@@ -25,6 +26,10 @@ export async function POST(req: NextRequest) {
 
   if (!name || !url) {
     return NextResponse.json({ error: "name and url are required" }, { status: 400 });
+  }
+
+  if (!isHttpUrl(url)) {
+    return NextResponse.json({ error: "url must be a valid http(s) URL" }, { status: 400 });
   }
 
   const existing = await prisma.application.findUnique({ where: { name } });
