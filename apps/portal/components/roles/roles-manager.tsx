@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { MoreHorizontal } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -36,6 +37,7 @@ interface RolesManagerProps {
 }
 
 export function RolesManager({ initialRoles }: RolesManagerProps) {
+  const router = useRouter();
   const [roles, setRoles] = useState(initialRoles);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -78,6 +80,7 @@ export function RolesManager({ initialRoles }: RolesManagerProps) {
         toast.success("Role created");
       }
       setDialogOpen(false);
+      router.refresh();
     } finally {
       setSubmitting(false);
     }
@@ -94,6 +97,7 @@ export function RolesManager({ initialRoles }: RolesManagerProps) {
     }
     setRoles((prev) => prev.filter((r) => r.id !== role.id));
     toast.success("Role deleted");
+    router.refresh();
   }
 
   return (
