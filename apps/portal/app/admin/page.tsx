@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { RolesManager } from "@/components/roles/roles-manager";
 import { UsersManager } from "@/components/users/users-manager";
+import { SignOutForm } from "@/components/auth/sign-out-form";
 
 export default async function AdminPage() {
   const [roles, employees] = await Promise.all([
@@ -14,6 +15,10 @@ export default async function AdminPage() {
 
   return (
     <div className="mx-auto w-full max-w-4xl space-y-12 p-8">
+      <div className="flex justify-end">
+        <SignOutForm />
+      </div>
+
       <div>
         <h1 className="mb-1 text-2xl font-semibold">Roles</h1>
         <p className="mb-6 text-muted-foreground">

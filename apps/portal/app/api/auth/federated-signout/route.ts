@@ -8,7 +8,13 @@ import { signOut } from "@/auth";
 // also ends the Keycloak session (RP-initiated / "federated" logout) via
 // its end_session_endpoint, using the id_token captured at sign-in as
 // id_token_hint.
-export async function GET(request: NextRequest) {
+//
+// POST-only, not GET: this mutates session state (signs the user out), so
+// a GET would let any cross-site <img>/<a> force it via the browser's
+// top-level-navigation cookie behavior. POST is protected by the session
+// cookie's default SameSite=Lax, which Chrome/Firefox withhold on
+// cross-site POSTs (form auto-submit from another origin), unlike GET.
+export async function POST(request: NextRequest) {
   const token = await getToken({
     req: request,
     secret: process.env.AUTH_SECRET,
