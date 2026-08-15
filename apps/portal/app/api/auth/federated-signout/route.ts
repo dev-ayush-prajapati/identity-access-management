@@ -31,6 +31,9 @@ export async function POST(request: NextRequest) {
 
   const params = new URLSearchParams({
     id_token_hint: idToken,
+    // Explicit, rather than relying on Keycloak inferring it from
+    // id_token_hint's aud/azp claim.
+    client_id: process.env.AUTH_KEYCLOAK_ID ?? "",
     post_logout_redirect_uri: new URL("/", request.url).toString(),
   });
   return NextResponse.redirect(
