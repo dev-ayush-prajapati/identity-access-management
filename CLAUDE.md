@@ -6,13 +6,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Enterprise Identity & Access Management portal (MCA Semester 3 project). Demonstrates SSO (Keycloak, shared across two apps) and RBAC (an Access Matrix mapping Roles to Applications) for a single organization — no multi-tenancy.
 
-All locked design decisions (roles, data model, screens, roadmap) live in `docs/planning-notes.md` — read it before making architectural changes, and update it when a decision changes.
+All locked design decisions (roles, data model, screens, roadmap) live in `docs/planning-notes.md` — read it before making architectural changes, and update it when a decision changes. `docs/plan.md` is the separate forward-looking task list (Sem3 remaining work, Sem3 stretch, Sem4 backlog) — check it too when asked what to build next.
 
 Stack: Next.js 16 (App Router) + TypeScript, Tailwind CSS + shadcn/ui, PostgreSQL + Prisma, Keycloak + Auth.js (NextAuth).
 
 ## Current status
 
-Early stage. `apps/portal` is still the default `create-next-app` scaffold — no auth, no database, no RBAC code yet. Not yet built: `apps/finance-app` (the SSO-proof stub app), `docker-compose.yml` (Postgres + Keycloak), Prisma schema/client, Auth.js wiring. Treat any architecture below as the target, not the current state, unless you've verified the code exists.
+Mid-build, past scaffold stage. Both apps wired to one Keycloak realm (SSO working), Postgres + Prisma in `apps/portal`, Auth.js v5 with edge/node config split. RBAC modules built: Application Management, Role Management, User Management, Access Matrix, Employee dashboard — each with server-side `requireUserType` checks and audit logging. Still open: Profile page, Audit Log viewer, and step 7 (tests + docs) hasn't started. `docs/planning-notes.md`'s roadmap section is the authoritative, up-to-date step tracker — check it, and verify against actual code, rather than trusting this summary as it ages.
 
 ## Commands
 
@@ -24,9 +24,10 @@ npm run dev      # start dev server
 npm run build    # production build
 npm run start    # run production build
 npm run lint     # eslint
+npm test         # vitest run (apps/portal only — see below)
 ```
 
-No test suite is configured yet in either app.
+`apps/portal` has a Vitest suite (`lib/**`, `app/api/**/route.ts`, mocking only `@/auth` / `@/lib/prisma` / `@/lib/audit` / `@/lib/keycloak-admin`) — run it after touching any API route or `lib/` function. No test suite in `apps/finance-app` (it has no business logic to test — see Architecture).
 
 **npm only** — this project uses npm (not yarn/pnpm). Don't introduce a second lockfile.
 

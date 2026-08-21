@@ -1,0 +1,54 @@
+# Plan
+
+Forward-looking task list: what's left in Sem3, what's optional Sem3 polish, what's deferred to Sem4. `docs/planning-notes.md` stays the record of *locked decisions and what was already built/fixed and why* — this file is just the task list, checked off as things land.
+
+## Process notes
+
+- All of this — test suite, doc fixes, plan.md, everything in section A below — lands on one branch (`feat/sem3-wrapup`), one PR at the end. Matches the repo's existing PR-per-feature history without over-fragmenting into a PR per plan item.
+- `npm audit` on `apps/portal` flags 13 (2 moderate, 11 high) — checked all of them: every one is either dev-only tooling (ESLint/TypeScript internals, the Prisma *CLI's* bundled deps — not `@prisma/client`) or a build-time transitive dep inside `next` (`postcss`, `sharp`) that only ever processes this project's own source/CSS, never attacker-controlled runtime input. Nothing in the actual request-handling path (no `next-auth`, `@prisma/client`, or `pg` advisory). `npm audit fix` (non-breaking) would clear a few; the rest need `--force` and would downgrade `prisma` or bump `next` outside its stated range — deferred as its own separate pass, not bundled into this branch.
+
+## Status snapshot (2026-08-21)
+
+- **Done + verified**: SSO (Keycloak, portal + finance-app), RBAC (UserType/Role split), Application/Role/User Management, Access Matrix, Employee dashboard, Vitest suite (52 tests over `lib/**` + every `app/api/**/route.ts`). Full history in `docs/planning-notes.md`.
+- **Code written this session, NOT yet verified or committed**:
+  - Profile page (`apps/portal/app/profile/page.tsx`) — real screen, replaces placeholder.
+  - Audit Log viewer (`apps/portal/components/audit-log/audit-log-table.tsx`, wired into `/admin`).
+  - Needs: `npm run lint`, `tsc --noEmit`, `npm run build`, `npm test`, a live browser click-through (Postgres + Keycloak containers are already up locally), then commit.
+- **Not started**: root README.md.
+
+## A. Sem3 — must finish (closes the existing roadmap)
+
+- [ ] Verify + commit the Profile page (in progress, see above).
+- [ ] Verify + commit the Audit Log viewer (in progress, see above).
+- [ ] Root README.md — setup walkthrough: `docker compose up` → copy `.env.example` files → `node scripts/bootstrap-superadmin.ts` (run from `apps/portal`, Node's native TS support — confirmed, no tsx/ts-node needed) → `npm run dev` in both apps. Currently only `apps/portal`'s default create-next-app README exists.
+- [ ] Application delete guard — `DELETE /api/applications/[id]` silently cascades its `RoleAccess` rows; `DELETE /api/roles/[id]` blocks with 409 if referenced. Bring Application delete in line with the same pattern (or decide explicitly to keep the cascade and document why — but decide, don't leave it asymmetric by accident). Small, self-contained. Add the matching case to `app/api/applications/[id]/route.test.ts`.
+- [ ] Update `docs/planning-notes.md` roadmap once the above is verified (mark step 6 fully ✅, step 7 fully ✅).
+
+## B. Sem3 — stretch (optional, only if time remains, cheapest first)
+
+1. **(XS)** Dark/light theme toggle — `next-themes` is already an installed dependency, unused. Add `ThemeProvider` in `layout.tsx` + a toggle.
+2. **(XS)** Keycloak brute-force lockout — realm config only (`keycloak/realm-export.json`), no app code.
+3. **(XS)** Keycloak password policy (length/complexity) — realm config only.
+4. **(S)** CI pipeline — GitHub Actions running lint + test + `tsc --noEmit` + build on every push. No new runtime deps.
+5. **(S)** Test coverage reporting — `@vitest/coverage-v8` dev dep.
+6. **(S)** Dashboard counts — small stat row on `/admin`/`/superadmin` (# roles, apps, employees/admins).
+7. **(M)** Keycloak MFA/OTP — mostly realm config; login is already 100% Keycloak-hosted so the apps barely change.
+8. **(M)** Session visibility + force-logout-other-sessions — extends the existing `lib/keycloak-admin.ts` wrapper.
+
+## C. Sem4 — deferred (real scope, bigger architecture)
+
+- **(L)** Fine-grained per-application permissions — today the Access Matrix is binary Role×Application. Read/write-level permissions means revisiting the locked data model in `docs/planning-notes.md`.
+- **(M)** Access-request / approval workflow — Employee requests an app, Admin approves/denies. New entity.
+- **(M)** Time-bound / auto-expiring access grants.
+- **(L)** WebAuthn / passkey login.
+- **(L)** E2E tests (Playwright) driving the real browser SSO flow against live Keycloak — needs Postgres + Keycloak up in CI.
+- **(M)** Notifications (email instead of one-time on-screen temp password).
+- **(M)** Rate limiting / API abuse protection.
+
+## Explicitly never
+
+- **Multi-tenancy** — locked out of scope in `CLAUDE.md`. Don't revisit without changing that file first.
+
+## How to use this doc
+
+Check items off as they land. Move an item from B or C up into A only when you actually decide to build it this semester — don't let the list silently grow into an implicit commitment. Effort tags are rough: XS = under an hour, S = a session, M = a few sessions, L = its own mini-project.
