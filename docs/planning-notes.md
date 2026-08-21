@@ -86,4 +86,8 @@ Bootstrap note: the very first SuperAdmin account can't be created through the a
      - Verified: `npm run lint`, `tsc --noEmit`, `npm run build` all clean; build output confirms `/dashboard` renders `ƒ (Dynamic)`.
    - ⏳ Profile page
    - ⏳ Audit Logs viewer (the log-writing itself is already happening, per module, as each is built)
-7. ⏳ Testing + documentation
+7. 🔄 Testing + documentation
+   - ✅ Test suite: Vitest (`apps/portal/vitest.config.ts`, node environment, `vite-tsconfig-paths` for the `@/*` alias) + `test/helpers.ts` (fake-session/request builders). Covers `lib/validate-url.ts` and every `app/api/**/route.ts` handler — only the true boundaries are mocked (`@/auth`, `@/lib/prisma`, `@/lib/audit`, `@/lib/keycloak-admin`, `next-auth/jwt`), so the real authorization and business logic runs unmocked in every test. Directly regression-tests each hand-fixed bug from steps 5-6: the stored-XSS URL guard (create + update), tier derivation in User Management (a caller can't create outside their own tier even with a spoofed `userType` in the body), Role delete blocked-if-referenced, and the federated sign-out CSRF fix (asserts no `GET` handler is exported at all, not just that POST behaves). 52 tests, `npm test` (`npm run test:watch` for watch mode). `npm run lint`, `tsc --noEmit`, `npm run build` all clean with the suite in place.
+     - Deliberately out of scope for this pass: Server Component page rendering and `middleware.ts` itself (both harder to unit test in isolation — still manual-verification only) and end-to-end/browser tests.
+     - Noted in passing, not fixed here: `/profile` still prerenders `○` (static) in the build output — the same static-vs-dynamic trap steps 6's Access Matrix module hit on `/admin`/`/superadmin`. Add `export const dynamic = "force-dynamic"` once it holds real per-request data.
+   - ⏳ Docs (root README / setup walkthrough — currently only `apps/portal`'s default create-next-app README exists)
