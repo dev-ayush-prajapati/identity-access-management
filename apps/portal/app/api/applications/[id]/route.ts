@@ -51,6 +51,16 @@ export async function DELETE(
   if (error) return error;
   const { id } = await params;
 
+  const rolesWithAccess = await prisma.roleAccess.count({ where: { applicationId: id } });
+  if (rolesWithAccess > 0) {
+    return NextResponse.json(
+      {
+        error: `${rolesWithAccess} role(s) have access to this application. Revoke access in the Access Matrix before deleting it.`,
+      },
+      { status: 409 }
+    );
+  }
+
   const application = await prisma.application.delete({ where: { id } }).catch(() => null);
 
   if (!application) {

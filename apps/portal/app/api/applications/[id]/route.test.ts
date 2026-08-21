@@ -8,6 +8,9 @@ const { authMock, prismaMock, logAuditMock } = vi.hoisted(() => ({
       update: vi.fn(),
       delete: vi.fn(),
     },
+    roleAccess: {
+      count: vi.fn(),
+    },
   },
   logAuditMock: vi.fn(),
 }));
@@ -23,6 +26,7 @@ const URL_ = "http://localhost:3000/api/applications/a1";
 beforeEach(() => {
   vi.clearAllMocks();
   authMock.mockResolvedValue(fakeSession({ userType: "SUPERADMIN" }));
+  prismaMock.roleAccess.count.mockResolvedValue(0);
 });
 
 describe("PATCH /api/applications/[id]", () => {
@@ -88,6 +92,17 @@ describe("DELETE /api/applications/[id]", () => {
     const res = await DELETE(jsonRequest(URL_, "DELETE"), paramsOf("a1"));
 
     expect(res.status).toBe(404);
+  });
+
+  it("blocks deletion with 409 when a role still has access to it", async () => {
+    prismaMock.roleAccess.count.mockResolvedValue(2);
+
+    const res = await DELETE(jsonRequest(URL_, "DELETE"), paramsOf("a1"));
+    const data = await res.json();
+
+    expect(res.status).toBe(409);
+    expect(data.error).toContain("2 role(s)");
+    expect(prismaMock.application.delete).not.toHaveBeenCalled();
   });
 
   it("deletes the application and logs the audit entry", async () => {
