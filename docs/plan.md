@@ -19,7 +19,7 @@ Forward-looking task list: what's left in Sem3, what's optional Sem3 polish, wha
 - [x] Verify + commit the Audit Log viewer.
 - [x] Application delete guard — brought `DELETE /api/applications/[id]` in line with Role delete's blocked-if-referenced pattern.
 - [x] Update `docs/planning-notes.md` roadmap to match.
-- [ ] Root README.md — setup walkthrough: `docker compose up` → copy `.env.example` files → `node scripts/bootstrap-superadmin.ts` (run from `apps/portal`, Node's native TS support — confirmed, no tsx/ts-node needed) → `npm run dev` in both apps. Currently only `apps/portal`'s default create-next-app README exists.
+- [x] Root README.md — setup walkthrough written and verified against the actual scripts/config (docker-compose.yml, .env.example files, package.json, scripts/bootstrap-superadmin.ts) — not executed end-to-end (see known gap above).
 - [ ] Live browser click-through of Profile + Audit Log viewer (see known gap above) — needs a real `.env` or a go-ahead to bootstrap one.
 - [ ] Push `feat/sem3-wrapup` + open the PR, once the above is settled.
 
