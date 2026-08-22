@@ -4,6 +4,8 @@ import { UsersManager } from "@/components/users/users-manager";
 import { AccessMatrix } from "@/components/access-matrix/access-matrix";
 import { AuditLogTable } from "@/components/audit-log/audit-log-table";
 import { SignOutForm } from "@/components/auth/sign-out-form";
+import { ThemeToggle } from "@/components/theme-toggle";
+import { StatRow } from "@/components/stat-row";
 
 // This page has no direct call to a dynamic API (cookies/headers), so
 // Next.js would otherwise treat it as static and prerender it once at
@@ -33,9 +35,18 @@ export default async function AdminPage() {
 
   return (
     <div className="mx-auto w-full max-w-4xl space-y-12 p-8">
-      <div className="flex justify-end">
+      <div className="flex justify-end gap-2">
+        <ThemeToggle />
         <SignOutForm />
       </div>
+
+      <StatRow
+        stats={[
+          { label: "Roles", value: roles.length },
+          { label: "Employees", value: employees.length },
+          { label: "Applications", value: applications.length },
+        ]}
+      />
 
       <div>
         <h1 className="mb-1 text-2xl font-semibold">Roles</h1>

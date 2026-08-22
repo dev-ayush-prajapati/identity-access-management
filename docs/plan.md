@@ -11,6 +11,7 @@ Forward-looking task list: what's left in Sem3, what's optional Sem3 polish, wha
 
 - **Done + verified** (`npm run lint`, `tsc --noEmit`, `npm run build`, `npm test`, and a live Chrome pass all clean): SSO (Keycloak, portal + finance-app), RBAC (UserType/Role split), Application/Role/User Management, Access Matrix, Employee dashboard, Profile page, Audit Log viewer, Application delete guard, Vitest suite (53 tests over `lib/**` + every `app/api/**/route.ts`). Committed on `feat/sem3-wrapup`. Full history in `docs/planning-notes.md`.
 - Live-verified against the real, weeks-old dev containers as the existing SuperAdmin (`ayush`) and an existing Admin (`tester`): login, redirect-by-usertype, `/profile` (both tiers), `/admin` (Roles/Employees/Access Matrix/Audit Log, real historical data). `.env` files created (all three apps).
+- `feat/sem3-wrapup` merged into `main` via PR #8 (GitHub UI), branch deleted. Section A below is fully closed.
 
 ## A. Sem3 — must finish (closes the existing roadmap)
 
@@ -20,18 +21,25 @@ Forward-looking task list: what's left in Sem3, what's optional Sem3 polish, wha
 - [x] Update `docs/planning-notes.md` roadmap to match.
 - [x] Root README.md — setup walkthrough written and verified against the actual scripts/config (docker-compose.yml, .env.example files, package.json, scripts/bootstrap-superadmin.ts).
 - [x] Live browser click-through of Profile + Audit Log viewer — done, see `docs/planning-notes.md` step 6.
-- [ ] Push `feat/sem3-wrapup` + open the PR.
+- [x] Push `feat/sem3-wrapup` + merge PR #8 into `main`.
+
+## A2. Demo readiness (added after realizing the app under-sells itself in a cold demo)
+
+- [x] `docs/demo-script.md` — presenter walkthrough for showing professors: the click-through narrative, what to say at the SSO/audit-log payoff moments, anticipated Q&A, what to do if something breaks mid-demo.
+- [x] Dark/light theme toggle (was B.1) — `components/theme-provider.tsx` + `components/theme-toggle.tsx`, wired into `/admin`, `/superadmin`, `/dashboard`, `/profile`. `next-themes` was already installed but had no provider — `components/ui/sonner.tsx` was already calling `useTheme()` into a void.
+- [x] Dashboard stat rows (was B.6) — `components/stat-row.tsx`, `/superadmin` shows Applications/Admins counts, `/admin` shows Roles/Employees/Applications counts.
 
 ## B. Sem3 — stretch (optional, only if time remains, cheapest first)
 
-1. **(XS)** Dark/light theme toggle — `next-themes` is already an installed dependency, unused. Add `ThemeProvider` in `layout.tsx` + a toggle.
+1. ~~Dark/light theme toggle~~ — done, see A2.
 2. **(XS)** Keycloak brute-force lockout — realm config only (`keycloak/realm-export.json`), no app code.
 3. **(XS)** Keycloak password policy (length/complexity) — realm config only.
 4. **(S)** CI pipeline — GitHub Actions running lint + test + `tsc --noEmit` + build on every push. No new runtime deps.
 5. **(S)** Test coverage reporting — `@vitest/coverage-v8` dev dep.
-6. **(S)** Dashboard counts — small stat row on `/admin`/`/superadmin` (# roles, apps, employees/admins).
+6. ~~Dashboard counts~~ — done, see A2.
 7. **(M)** Keycloak MFA/OTP — mostly realm config; login is already 100% Keycloak-hosted so the apps barely change.
 8. **(M)** Session visibility + force-logout-other-sessions — extends the existing `lib/keycloak-admin.ts` wrapper.
+9. **(M)** Natural-language search or a simple anomaly callout over the Audit Log — a legitimate enterprise IAM trend if you want something AI-flavored, not a bolt-on for optics. Not urgent.
 
 ## C. Sem4 — deferred (real scope, bigger architecture)
 

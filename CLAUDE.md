@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Enterprise Identity & Access Management portal (MCA Semester 3 project). Demonstrates SSO (Keycloak, shared across two apps) and RBAC (an Access Matrix mapping Roles to Applications) for a single organization — no multi-tenancy.
 
-All locked design decisions (roles, data model, screens, roadmap) live in `docs/planning-notes.md` — read it before making architectural changes, and update it when a decision changes. `docs/plan.md` is the separate forward-looking task list (Sem3 remaining work, Sem3 stretch, Sem4 backlog) — check it too when asked what to build next.
+All locked design decisions (roles, data model, screens, roadmap) live in `docs/planning-notes.md` — read it before making architectural changes, and update it when a decision changes. `docs/plan.md` is the separate forward-looking task list (Sem3 remaining work, Sem3 stretch, Sem4 backlog) — check it too when asked what to build next. `docs/demo-script.md` is the presenter walkthrough for showing the app to non-technical evaluators.
 
 Stack: Next.js 16 (App Router) + TypeScript, Tailwind CSS + shadcn/ui, PostgreSQL + Prisma, Keycloak + Auth.js (NextAuth).
 
