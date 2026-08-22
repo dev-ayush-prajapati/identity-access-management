@@ -23,6 +23,9 @@ Point at the stat row (Applications / Admins), then the Application Catalog.
 > "This is what the Access Matrix, one screen over, will map Roles against."
 
 **4. Sign out. Sign in as an Admin.**
+Sign-out is two clicks, not one — click your app's "Sign out", then Keycloak shows its *own* "Do you want to log out?" page, click its blue **Logout** button too. *Then* you land back on the sign-in screen. Don't stop after the first click.
+> "That popup is Keycloak itself confirming the logout — a real identity provider, not something we built. It's proof this app never touches your password; Keycloak owns the whole session."
+Then sign in as an Admin.
 > "Different account, different Keycloak login, different permissions — same portal."
 
 **5. Admin dashboard: Roles → Employees → Access Matrix, in that order.**
@@ -34,7 +37,7 @@ Point at the stat row (Applications / Admins), then the Application Catalog.
 **6. Scroll to the Audit Log. Don't skip this.**
 > "Every single thing I just did is already sitting here — who, what, when. That's not a demo feature, it's writing to this table on every create/update/delete in the whole app."
 
-**7. Sign out. Sign in as the Employee you just created.**
+**7. Sign out (same two clicks as step 4). Sign in as the Employee you just created.**
 Land on their dashboard — only the one app tile shows.
 > "This is the payoff of the Access Matrix — they see exactly what their Role grants, nothing else, and it's enforced server-side, not just hidden in the UI."
 
@@ -54,5 +57,5 @@ This is the moment. Let it land.
 ## If something breaks mid-demo
 
 - Blank/error page → check both dev servers are still running, `docker ps` shows both containers up.
-- Stuck on a Keycloak page you don't recognize → that's Keycloak's own hosted UI (login/logout confirm) — normal, not a bug, just click through it.
+- Stuck on a Keycloak "Do you want to log out?" page → click its blue **Logout** button. Normal, not a bug — it's a second click, not a redirect failure.
 - Wrong dashboard after login → that's the post-login redirect working correctly, it's routing you by account tier, not a glitch.
