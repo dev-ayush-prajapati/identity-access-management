@@ -1,6 +1,7 @@
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { SignOutForm } from "@/components/auth/sign-out-form";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { isHttpUrl } from "@/lib/validate-url";
 import {
   Card,
@@ -28,7 +29,8 @@ export default async function DashboardPage() {
 
   return (
     <div className="mx-auto w-full max-w-4xl space-y-6 p-8">
-      <div className="flex justify-end">
+      <div className="flex justify-end gap-2">
+        <ThemeToggle />
         <SignOutForm />
       </div>
 

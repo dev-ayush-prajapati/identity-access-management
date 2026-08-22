@@ -2,6 +2,8 @@ import { prisma } from "@/lib/prisma";
 import { ApplicationsManager } from "@/components/applications/applications-manager";
 import { UsersManager } from "@/components/users/users-manager";
 import { SignOutForm } from "@/components/auth/sign-out-form";
+import { ThemeToggle } from "@/components/theme-toggle";
+import { StatRow } from "@/components/stat-row";
 
 // This page has no direct call to a dynamic API (cookies/headers), so
 // Next.js would otherwise treat it as static and prerender it once at
@@ -20,9 +22,17 @@ export default async function SuperAdminPage() {
 
   return (
     <div className="mx-auto w-full max-w-4xl space-y-12 p-8">
-      <div className="flex justify-end">
+      <div className="flex justify-end gap-2">
+        <ThemeToggle />
         <SignOutForm />
       </div>
+
+      <StatRow
+        stats={[
+          { label: "Applications", value: applications.length },
+          { label: "Admins", value: admins.length },
+        ]}
+      />
 
       <div>
         <h1 className="mb-1 text-2xl font-semibold">Application Catalog</h1>
