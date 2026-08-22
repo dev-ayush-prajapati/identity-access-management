@@ -53,6 +53,8 @@ This is the moment. Let it land.
 - **"Isn't this just a login page?"** — No: it's an identity provider (Keycloak) shared across two apps, a three-tier permission model, a Role-based access matrix enforced on every API route (not just hidden UI), and a full audit trail. The login screen is the smallest part of it.
 - **"What's actually hard about this?"** — Getting SSO to work across two apps (shared session, distinct cookies, federated logout closing both sessions), and making sure authorization can't be bypassed by hitting an API route directly instead of clicking through the UI — every route checks the caller's permissions itself.
 - **"Is it tested?"** — 53 automated tests over every API route and the security-relevant logic (`npm test`), plus this was just walked through live.
+- **"Does anyone actually pay for this?" / "Is this a real problem?"** — Yes. WorkOS is a company built entirely on enterprise identity; customers include OpenAI, Cursor, and Perplexity, and enterprises pay roughly $125/month *per SSO connection*. Then draw the distinction, because it's the sharper answer: *"WorkOS solves the vendor side — helping a SaaS product accept an enterprise's existing identity system. We built the enterprise side — one organization governing which employees reach which internal apps. Same domain, opposite direction. Ours is closer to identity governance (IGA) than to B2B auth infrastructure."*
+- **"What's missing / what would you do next?"** — Lead with SCIM/directory sync: auto-deprovisioning when an employee leaves, instead of an Admin remembering to delete the account. Naming the real gap unprompted lands better than claiming the project is finished. Full list in `docs/plan.md`.
 
 ## If something breaks mid-demo
 
