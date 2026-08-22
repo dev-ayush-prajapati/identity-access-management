@@ -9,9 +9,8 @@ Forward-looking task list: what's left in Sem3, what's optional Sem3 polish, wha
 
 ## Status snapshot (2026-08-21)
 
-- **Done + verified** (`npm run lint`, `tsc --noEmit`, `npm run build`, `npm test` all clean): SSO (Keycloak, portal + finance-app), RBAC (UserType/Role split), Application/Role/User Management, Access Matrix, Employee dashboard, Profile page, Audit Log viewer, Application delete guard, Vitest suite (53 tests over `lib/**` + every `app/api/**/route.ts`). Committed on `feat/sem3-wrapup`. Full history in `docs/planning-notes.md`.
-- **Known gap, not closed this session**: no live browser click-through of Profile/Audit-Log. `apps/portal/.env` doesn't exist in this checkout (even though the Postgres/Keycloak containers are already running locally) — creating one from `.env.example` would mean bootstrapping a brand-new SuperAdmin into those weeks-old, real containers, which wasn't the right call to make unprompted. Needs either the real local `.env` or an explicit go-ahead to bootstrap a fresh one.
-- **Not started**: root README.md.
+- **Done + verified** (`npm run lint`, `tsc --noEmit`, `npm run build`, `npm test`, and a live Chrome pass all clean): SSO (Keycloak, portal + finance-app), RBAC (UserType/Role split), Application/Role/User Management, Access Matrix, Employee dashboard, Profile page, Audit Log viewer, Application delete guard, Vitest suite (53 tests over `lib/**` + every `app/api/**/route.ts`). Committed on `feat/sem3-wrapup`. Full history in `docs/planning-notes.md`.
+- Live-verified against the real, weeks-old dev containers as the existing SuperAdmin (`ayush`) and an existing Admin (`tester`): login, redirect-by-usertype, `/profile` (both tiers), `/admin` (Roles/Employees/Access Matrix/Audit Log, real historical data). `.env` files created (all three apps).
 
 ## A. Sem3 — must finish (closes the existing roadmap)
 
@@ -19,9 +18,9 @@ Forward-looking task list: what's left in Sem3, what's optional Sem3 polish, wha
 - [x] Verify + commit the Audit Log viewer.
 - [x] Application delete guard — brought `DELETE /api/applications/[id]` in line with Role delete's blocked-if-referenced pattern.
 - [x] Update `docs/planning-notes.md` roadmap to match.
-- [x] Root README.md — setup walkthrough written and verified against the actual scripts/config (docker-compose.yml, .env.example files, package.json, scripts/bootstrap-superadmin.ts) — not executed end-to-end (see known gap above).
-- [ ] Live browser click-through of Profile + Audit Log viewer (see known gap above) — needs a real `.env` or a go-ahead to bootstrap one.
-- [ ] Push `feat/sem3-wrapup` + open the PR, once the above is settled.
+- [x] Root README.md — setup walkthrough written and verified against the actual scripts/config (docker-compose.yml, .env.example files, package.json, scripts/bootstrap-superadmin.ts).
+- [x] Live browser click-through of Profile + Audit Log viewer — done, see `docs/planning-notes.md` step 6.
+- [ ] Push `feat/sem3-wrapup` + open the PR.
 
 ## B. Sem3 — stretch (optional, only if time remains, cheapest first)
 
