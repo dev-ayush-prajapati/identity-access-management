@@ -6,55 +6,137 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Enterprise Identity & Access Management portal (MCA Semester 3 project). Demonstrates SSO (Keycloak, shared across two apps) and RBAC (an Access Matrix mapping Roles to Applications) for a single organization — no multi-tenancy.
 
-All locked design decisions (roles, data model, screens, roadmap) live in `docs/planning-notes.md` — read it before making architectural changes, and update it when a decision changes. `docs/plan.md` is the separate forward-looking task list (Sem3 remaining work, Sem3 stretch, Sem4 backlog) — check it too when asked what to build next. `docs/demo-script.md` is the presenter walkthrough for showing the app to non-technical evaluators.
+Stack: Next.js 16 (App Router) + TypeScript, Tailwind CSS v4 + shadcn/ui, PostgreSQL + Prisma 7, Keycloak 26 + Auth.js v5 (NextAuth beta).
 
-Stack: Next.js 16 (App Router) + TypeScript, Tailwind CSS + shadcn/ui, PostgreSQL + Prisma, Keycloak + Auth.js (NextAuth).
+Docs, in the order you'll need them:
 
-## Current status
-
-Mid-build, past scaffold stage. Both apps wired to one Keycloak realm (SSO working), Postgres + Prisma in `apps/portal`, Auth.js v5 with edge/node config split. RBAC modules built: Application Management, Role Management, User Management, Access Matrix, Employee dashboard — each with server-side `requireUserType` checks and audit logging. Still open: Profile page, Audit Log viewer, and step 7 (tests + docs) hasn't started. `docs/planning-notes.md`'s roadmap section is the authoritative, up-to-date step tracker — check it, and verify against actual code, rather than trusting this summary as it ages.
+- `docs/planning-notes.md` — locked design decisions (roles, data model, screens) **and** the authoritative build log: every real bug hit and how it was fixed. Read before any architectural change; update when a decision changes. Its roadmap section is the real status tracker — trust it over any summary, and verify against actual code.
+- `docs/plan.md` — forward-looking task list (Sem3 remaining, Sem3 stretch, Sem4 backlog). Check when asked what to build next.
+- `docs/demo-script.md` — presenter walkthrough for non-technical evaluators.
+- `README.md` — first-time setup walkthrough (env files → containers → migrate → bootstrap).
 
 ## Commands
 
-Repo is a monorepo with no root `package.json` and no workspace tooling (no npm workspaces/Turborepo) — always `cd apps/portal` (or the relevant app) before running anything.
+Monorepo with **no root `package.json`** and no workspace tooling (no npm workspaces/Turborepo) — always `cd apps/portal` (or `apps/finance-app`) before running anything.
+
+**npm only.** Don't introduce a second lockfile.
+
+Containers must be up for anything touching the DB or auth (Postgres `127.0.0.1:5432`, Keycloak `127.0.0.1:8080`):
+
+```bash
+docker compose up -d          # from repo root
+```
 
 ```bash
 cd apps/portal
-npm run dev      # start dev server
-npm run build    # production build
-npm run start    # run production build
-npm run lint     # eslint
-npm test         # vitest run (apps/portal only — see below)
+npm run dev                   # dev server → http://localhost:3000
+npm run build                 # production build
+npm run start
+npm run lint                  # eslint
+npm test                      # vitest run
+npm run test:watch
+npx tsc --noEmit              # not an npm script, but the type gate used throughout the docs
 ```
 
-`apps/portal` has a Vitest suite (`lib/**`, `app/api/**/route.ts`, mocking only `@/auth` / `@/lib/prisma` / `@/lib/audit` / `@/lib/keycloak-admin`) — run it after touching any API route or `lib/` function. No test suite in `apps/finance-app` (it has no business logic to test — see Architecture).
+`apps/finance-app` has the same four Next.js scripts (dev → **port 3001**), no test suite, no Prisma.
 
-**npm only** — this project uses npm (not yarn/pnpm). Don't introduce a second lockfile.
+Verification gate used by every entry in `docs/planning-notes.md` — run all four before calling work done:
 
-## Architecture (target)
-
-Two independent Next.js apps share one Keycloak realm:
-
-```
-Browser → Next.js API routes (app/api/*) → Prisma → Postgres   [app data: users, roles, access matrix, audit log]
-Browser → Keycloak (via Auth.js / NextAuth)                     [identity + login only]
+```bash
+npm run lint && npx tsc --noEmit && npm run build && npm test
 ```
 
-- **UserType** (fixed: SuperAdmin / Admin / Employee) — decides which dashboard and management permissions a user gets. Hardcoded, not an editable DB-driven list.
-- **Role** (dynamic, admin-managed — e.g. HR, Finance, IT) — decides which Applications appear on a user's dashboard. This is the dimension the Access Matrix (Role × Application) governs, and what the Role Management module edits.
-- Never add tenant/multi-tenancy logic — explicitly out of scope for this project.
-- Authorization must be enforced server-side (middleware / API route checks) on every protected route — hiding a nav link is not enough; direct URL navigation to an unauthorized page must also be blocked.
-- `apps/finance-app` exists solely to prove SSO: it shares the same Keycloak realm/session as `apps/portal`, so a user already logged into Portal is not asked to log in again there.
+### Single test
 
-## Import paths
+```bash
+npx vitest run app/api/roles/route.test.ts        # one file
+npx vitest run -t "403s for an Employee"          # one case by name
+```
 
-Always use the `@/*` alias (configured in each app's `tsconfig.json`). Never use relative `../../` imports.
+### Prisma
+
+`lib/generated/prisma` is **gitignored and has no postinstall hook** — a fresh clone won't typecheck until it's generated.
+
+```bash
+npx prisma generate                     # required after clone and after any schema.prisma edit
+npx prisma migrate dev --name <desc>    # create + apply a migration in dev
+npx prisma migrate deploy               # apply existing migrations (setup path)
+node scripts/bootstrap-superadmin.ts    # idempotent; creates the first SuperAdmin (Keycloak login + Postgres row)
+```
+
+Config lives in `prisma.config.ts` (Prisma 7 style — loads `dotenv`, points at `prisma/schema.prisma`); the schema's datasource has no inline `url`.
+
+## Architecture
+
+Two independent Next.js apps share one Keycloak realm (`iam-portal`, defined in `keycloak/realm-export.json`, auto-imported by Docker Compose):
+
+```
+Browser → Next.js API routes (app/api/*) → Prisma → Postgres   [authorization data: users, roles, access matrix, audit log]
+Browser → Keycloak (via Auth.js / NextAuth)                     [identity + credentials only]
+```
+
+**Keycloak owns identity; Postgres owns authorization.** The `signIn` callback rejects any Keycloak login with no matching `User` row (matched on `keycloakId`) — there is no auto-provisioning. Creating a user therefore means Keycloak account **first** (`lib/keycloak-admin.ts`, random temp password + forced reset), Postgres row second; deleting reverses it. A Keycloak failure must surface as 502 and leave Postgres untouched rather than orphaning a login.
+
+Two orthogonal permission dimensions — don't conflate them:
+
+- **UserType** (fixed enum: `SUPERADMIN` / `ADMIN` / `EMPLOYEE`) — decides which dashboard and which management powers a user gets. Hardcoded, never an editable DB-driven list.
+- **Role** (dynamic, admin-managed — HR, Finance, IT…) — decides which Applications appear on an Employee's dashboard. This is the dimension the Access Matrix (`RoleAccess` = Role × Application) governs and what Role Management edits. Admins/SuperAdmins carry no Role.
+
+Tier rule: the tier a caller manages is **derived from the caller's own `userType`** (`managedUserType()` in the users routes), never read from the request body — SuperAdmin manages Admins, Admin manages Employees. Cross-tier access answers **404, not 403**, so it doesn't confirm the row exists.
+
+`apps/finance-app` exists solely to prove SSO: same realm/session, one page, no DB, no business logic — hence no tests.
+
+### Auth: the edge/node split (most common trap)
+
+- `auth.config.ts` — **edge-safe**. Providers + the DB-free `session` callback. Imported directly by `middleware.ts`. **Must never import Prisma**: Prisma's client needs `node:crypto`/`process.stdout`, which the Edge runtime lacks, so pulling it in 500s every protected route.
+- `auth.ts` — Node runtime only. Spreads `authConfig` and adds the Prisma-dependent `signIn`/`jwt` callbacks. Used by route handlers and Server Components.
+
+Each app sets a **distinct `cookies.sessionToken.name`** (`portal-session-token` / `financeapp-session-token`). Both apps are `localhost` on different ports and browsers share cookies across ports — without this, one app receives the other's cookie and fails to decrypt it.
+
+Sign-out goes through `app/api/auth/federated-signout/route.ts` (**POST-only**, for CSRF reasons), not Auth.js's default signout — the default only clears the local cookie and leaves Keycloak's SSO session alive, so the next login silently re-authenticates.
+
+### Authorization is enforced in two independent places
+
+1. **Pages** — `middleware.ts`, via the `ZONE_PREFIXES` table (`/superadmin`→SUPERADMIN, `/admin`→ADMIN, `/dashboard`→EMPLOYEE, plus `/profile` for any logged-in user). Adding a protected page means updating both that table (if zoned) and `config.matcher`.
+2. **API routes** — `requireUserType([...])` from `@/lib/api-auth` at the top of every handler. The middleware matcher does **not** cover `/api/*`; routes gate themselves.
+
+Hiding a nav link is never authorization. Direct URL navigation and direct API calls must both be blocked.
+
+Every mutation writes an audit row via `logAudit(userId, ACTION, details)` from `@/lib/audit`.
+
+### Server Components that read Prisma
+
+Any page that reads Prisma but makes no direct `cookies()`/`headers()` call needs:
+
+```ts
+export const dynamic = "force-dynamic";
+```
+
+Without it Next.js prerenders the page as static at build time and `next start` serves frozen DB data forever — invisible in `next dev`. This bit `/admin` and `/superadmin` for real. Confirm the build output marks the route `ƒ (Dynamic)`, not `○`.
+
+## Conventions
+
+- **Import paths**: always the `@/*` alias (maps to each app's own root). Never relative `../../`. The alias is per-app — apps can't import from each other.
+- **Prisma types** come from `@/lib/generated/prisma` (the generator's output dir), *not* `@prisma/client`. The shared client singleton is `@/lib/prisma`, which wires the `PrismaPg` driver adapter Prisma 7 requires.
+- **shadcn/ui here is `base-nova` style, backed by Base UI — not Radix.** There is no `asChild` prop; use `render={<Button …/>}`. Kokonut UI is registered as `@kokonutui` in `components.json` and installs through the same shadcn CLI.
+- **Delete semantics**: a delete that would orphan references returns **409 and blocks** (Role with users, Application with granted access) — never a silent DB cascade.
+- **Admin-entered URLs** must pass `isHttpUrl()` from `@/lib/validate-url` before storage; they render as clickable `<a href>` on the Employee dashboard, so a `javascript:`/`data:` URL would be stored XSS.
+
+## Tests
+
+Vitest, `environment: "node"` — pure functions and API route handlers only. No DOM: Server Component/page rendering and `middleware.ts` are manual-verification only, by design.
+
+Pattern (see `app/api/roles/route.test.ts`): `vi.hoisted()` for mock fns, `vi.mock` for **only** the true boundaries — `@/auth`, `@/lib/prisma`, `@/lib/audit`, `@/lib/keycloak-admin`, `next-auth/jwt` — then import the route under test. Real authorization and business logic run unmocked. Session/request fixtures come from `@/test/helpers` (`fakeSession`, `jsonRequest`, `paramsOf`).
+
+Every `app/api/**/route.ts` with logic of its own has a sibling `route.test.ts` (the only exception is `app/api/auth/[...nextauth]/route.ts`, which just re-exports Auth.js's `handlers`). Adding a route means adding one. Run the suite after touching any route or `lib/` function.
 
 ## Never do these
 
-- Never call Prisma/Postgres from a client component — server-side only (API route handler or Server Component).
+- Never call Prisma/Postgres from a client component — server-side only (route handler or Server Component).
+- Never import Prisma, directly or transitively, into `auth.config.ts` or `middleware.ts`.
 - Never skip a server-side RBAC check on a route because the UI already hides the link to it.
-- Never modify shadcn/ui components directly once added under `components/ui/` — treat them as vendored.
+- Never add tenant/multi-tenancy logic — explicitly out of scope. Benchmarking against WorkOS or similar B2B auth vendors makes this look like a missing feature; it isn't (see the landscape note in `docs/plan.md`).
+- Never modify shadcn/ui components under `components/ui/` — treat them as vendored.
 - Don't install new packages without asking first.
 - Don't touch files unrelated to the current task — no silent refactors.
 - Before fixing a build/type error in one file, search for all other usages of what you're changing — don't fix it in isolation.
