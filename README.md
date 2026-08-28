@@ -46,6 +46,16 @@ node scripts/bootstrap-superadmin.ts
 
 The bootstrap script creates the first SuperAdmin (Keycloak login + matching Postgres row) — nobody exists yet to create one through the app UI. It's idempotent; safe to re-run.
 
+**3b. (Optional but recommended) Seed demo data:**
+
+```bash
+node scripts/seed-demo.ts
+```
+
+A fresh database means every screen is an empty state, which demos badly. This fills in four Roles, a five-app catalog, a deliberately lopsided Access Matrix, one Admin, six Employees, and a backdated audit trail so the activity chart has a shape. It prints the temporary password for every account it creates — Keycloak forces a reset on first sign-in, so they're one-use.
+
+Also idempotent: re-running skips everything that already exists rather than duplicating it.
+
 **4. Set up finance-app** (no database, no Prisma — it only proves SSO):
 
 ```bash
