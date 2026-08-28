@@ -1,10 +1,7 @@
+import Link from "next/link";
 import { prisma } from "@/lib/prisma";
-import { RolesManager } from "@/components/roles/roles-manager";
-import { UsersManager } from "@/components/users/users-manager";
-import { AccessMatrix } from "@/components/access-matrix/access-matrix";
 import { AuditLogTable } from "@/components/audit-log/audit-log-table";
-import { SignOutForm } from "@/components/auth/sign-out-form";
-import { ThemeToggle } from "@/components/theme-toggle";
+import { PageHeader } from "@/components/shell/page-header";
 import { StatRow } from "@/components/stat-row";
 
 // This page has no direct call to a dynamic API (cookies/headers), so
@@ -12,76 +9,60 @@ import { StatRow } from "@/components/stat-row";
 // build time — real Postgres data would never update after that.
 export const dynamic = "force-dynamic";
 
-// No pagination UI yet — cap the query and say so in the table footer
-// instead of silently truncating.
-const AUDIT_LOG_LIMIT = 100;
+// The overview shows just enough recent activity to be useful as a landing
+// page; the full log lives on /admin/audit.
+const RECENT_ACTIVITY_LIMIT = 5;
 
-export default async function AdminPage() {
-  const [roles, employees, applications, access, auditLogs] = await Promise.all([
-    prisma.role.findMany({ orderBy: { createdAt: "asc" } }),
-    prisma.user.findMany({
-      where: { userType: "EMPLOYEE" },
-      include: { role: true },
-      orderBy: { createdAt: "asc" },
-    }),
-    prisma.application.findMany({ orderBy: { createdAt: "asc" } }),
-    prisma.roleAccess.findMany({ select: { roleId: true, applicationId: true } }),
-    prisma.auditLog.findMany({
-      orderBy: { createdAt: "desc" },
-      take: AUDIT_LOG_LIMIT,
-      include: { user: { select: { name: true, email: true } } },
-    }),
-  ]);
+export default async function AdminOverviewPage() {
+  const [roleCount, employeeCount, applicationCount, grantCount, recentActivity] =
+    await Promise.all([
+      prisma.role.count(),
+      prisma.user.count({ where: { userType: "EMPLOYEE" } }),
+      prisma.application.count(),
+      prisma.roleAccess.count(),
+      prisma.auditLog.findMany({
+        orderBy: { createdAt: "desc" },
+        take: RECENT_ACTIVITY_LIMIT,
+        include: { user: { select: { name: true, email: true } } },
+      }),
+    ]);
 
   return (
-    <div className="mx-auto w-full max-w-4xl space-y-12 p-8">
-      <div className="flex justify-end gap-2">
-        <ThemeToggle />
-        <SignOutForm />
-      </div>
-
-      <StatRow
-        stats={[
-          { label: "Roles", value: roles.length },
-          { label: "Employees", value: employees.length },
-          { label: "Applications", value: applications.length },
-        ]}
+    <>
+      <PageHeader
+        breadcrumb={[{ label: "Admin" }, { label: "Overview" }]}
+        title="Overview"
+        description="Roles, Employees, and the Access Matrix that connects them."
       />
 
-      <div>
-        <h1 className="mb-1 text-2xl font-semibold">Roles</h1>
-        <p className="mb-6 text-muted-foreground">
-          Roles decide which applications appear on an Employee&apos;s dashboard,
-          via the Access Matrix below.
-        </p>
-        <RolesManager initialRoles={roles} />
-      </div>
+      <div className="space-y-8">
+        <StatRow
+          stats={[
+            { label: "Roles", value: roleCount },
+            { label: "Employees", value: employeeCount },
+            { label: "Applications", value: applicationCount },
+            { label: "Access grants", value: grantCount },
+          ]}
+        />
 
-      <div>
-        <h1 className="mb-1 text-2xl font-semibold">Employees</h1>
-        <p className="mb-6 text-muted-foreground">
-          Employee accounts. Each gets a Keycloak login (temp password, forced
-          reset on first login) and a Role that decides their dashboard apps.
-        </p>
-        <UsersManager initialUsers={employees} targetUserType="EMPLOYEE" roles={roles} />
+        <div>
+          <div className="mb-4 flex items-end justify-between gap-4">
+            <div>
+              <h2 className="text-lg font-semibold">Recent activity</h2>
+              <p className="text-sm text-muted-foreground">
+                The newest entries from the audit log.
+              </p>
+            </div>
+            <Link
+              href="/admin/audit"
+              className="shrink-0 text-sm text-muted-foreground underline underline-offset-4 hover:text-foreground"
+            >
+              View all
+            </Link>
+          </div>
+          <AuditLogTable logs={recentActivity} limit={RECENT_ACTIVITY_LIMIT} />
+        </div>
       </div>
-
-      <div>
-        <h1 className="mb-1 text-2xl font-semibold">Access Matrix</h1>
-        <p className="mb-6 text-muted-foreground">
-          Which applications each Role can open. Checked = that Role&apos;s
-          Employees see the app on their dashboard.
-        </p>
-        <AccessMatrix roles={roles} applications={applications} initialAccess={access} />
-      </div>
-
-      <div>
-        <h1 className="mb-1 text-2xl font-semibold">Audit Log</h1>
-        <p className="mb-6 text-muted-foreground">
-          Who did what, when — every create/update/delete above writes an entry here.
-        </p>
-        <AuditLogTable logs={auditLogs} limit={AUDIT_LOG_LIMIT} />
-      </div>
-    </div>
+    </>
   );
 }

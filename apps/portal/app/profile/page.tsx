@@ -1,7 +1,6 @@
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
-import { SignOutForm } from "@/components/auth/sign-out-form";
-import { ThemeToggle } from "@/components/theme-toggle";
+import { PageHeader } from "@/components/shell/page-header";
 import {
   Card,
   CardContent,
@@ -32,43 +31,39 @@ export default async function ProfilePage() {
     : null;
 
   return (
-    <div className="mx-auto w-full max-w-2xl space-y-6 p-8">
-      <div className="flex justify-end gap-2">
-        <ThemeToggle />
-        <SignOutForm />
-      </div>
+    <>
+      <PageHeader
+        breadcrumb={[{ label: "Account" }, { label: "Profile" }]}
+        title="Profile"
+        description="Your account information."
+      />
 
-      <div>
-        <h1 className="mb-1 text-2xl font-semibold">Profile</h1>
-        <p className="mb-6 text-muted-foreground">Your account information.</p>
-
-        {!user ? (
-          <p className="text-muted-foreground">Unable to load your profile.</p>
-        ) : (
-          <Card>
-            <CardHeader>
-              <CardTitle>{user.name}</CardTitle>
-              <CardDescription>{user.email}</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3 text-sm">
+      {!user ? (
+        <p className="text-muted-foreground">Unable to load your profile.</p>
+      ) : (
+        <Card className="max-w-2xl">
+          <CardHeader>
+            <CardTitle>{user.name}</CardTitle>
+            <CardDescription>{user.email}</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3 text-sm">
+            <div className="flex justify-between border-t pt-3">
+              <span className="text-muted-foreground">Account type</span>
+              <span>{USER_TYPE_LABEL[user.userType]}</span>
+            </div>
+            {user.userType === "EMPLOYEE" && (
               <div className="flex justify-between border-t pt-3">
-                <span className="text-muted-foreground">Account type</span>
-                <span>{USER_TYPE_LABEL[user.userType]}</span>
+                <span className="text-muted-foreground">Role</span>
+                <span>{user.role?.name ?? "Not assigned — contact your Admin"}</span>
               </div>
-              {user.userType === "EMPLOYEE" && (
-                <div className="flex justify-between border-t pt-3">
-                  <span className="text-muted-foreground">Role</span>
-                  <span>{user.role?.name ?? "Not assigned — contact your Admin"}</span>
-                </div>
-              )}
-              <div className="flex justify-between border-t pt-3">
-                <span className="text-muted-foreground">Member since</span>
-                <span>{new Date(user.createdAt).toLocaleDateString()}</span>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-      </div>
-    </div>
+            )}
+            <div className="flex justify-between border-t pt-3">
+              <span className="text-muted-foreground">Member since</span>
+              <span>{new Date(user.createdAt).toLocaleDateString()}</span>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+    </>
   );
 }

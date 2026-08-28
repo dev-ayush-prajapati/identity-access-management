@@ -1,8 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { ApplicationsManager } from "@/components/applications/applications-manager";
-import { UsersManager } from "@/components/users/users-manager";
-import { SignOutForm } from "@/components/auth/sign-out-form";
-import { ThemeToggle } from "@/components/theme-toggle";
+import { PageHeader } from "@/components/shell/page-header";
 import { StatRow } from "@/components/stat-row";
 
 // This page has no direct call to a dynamic API (cookies/headers), so
@@ -10,48 +7,39 @@ import { StatRow } from "@/components/stat-row";
 // build time — real Postgres data would never update after that.
 export const dynamic = "force-dynamic";
 
-export default async function SuperAdminPage() {
-  const [applications, admins] = await Promise.all([
-    prisma.application.findMany({ orderBy: { createdAt: "asc" } }),
-    prisma.user.findMany({
-      where: { userType: "ADMIN" },
-      include: { role: true },
-      orderBy: { createdAt: "asc" },
-    }),
+export default async function SuperAdminOverviewPage() {
+  const [applicationCount, adminCount, employeeCount] = await Promise.all([
+    prisma.application.count(),
+    prisma.user.count({ where: { userType: "ADMIN" } }),
+    prisma.user.count({ where: { userType: "EMPLOYEE" } }),
   ]);
 
   return (
-    <div className="mx-auto w-full max-w-4xl space-y-12 p-8">
-      <div className="flex justify-end gap-2">
-        <ThemeToggle />
-        <SignOutForm />
-      </div>
-
-      <StatRow
-        stats={[
-          { label: "Applications", value: applications.length },
-          { label: "Admins", value: admins.length },
-        ]}
+    <>
+      <PageHeader
+        breadcrumb={[{ label: "Super Admin" }, { label: "Overview" }]}
+        title="Overview"
+        description="The application catalog and the Admin accounts that manage everything below them."
       />
 
-      <div>
-        <h1 className="mb-1 text-2xl font-semibold">Application Catalog</h1>
-        <p className="mb-6 text-muted-foreground">
-          Applications registered in the system. This is what the Access
-          Matrix (on the Admin dashboard) maps Roles against.
-        </p>
-        <ApplicationsManager initialApplications={applications} />
-      </div>
+      <div className="space-y-8">
+        <StatRow
+          stats={[
+            { label: "Applications", value: applicationCount },
+            { label: "Admins", value: adminCount },
+            { label: "Employees", value: employeeCount },
+          ]}
+        />
 
-      <div>
-        <h1 className="mb-1 text-2xl font-semibold">Admins</h1>
-        <p className="mb-6 text-muted-foreground">
-          Admin accounts. Each gets a Keycloak login (temp password, forced
-          reset on first login) and manages Employees, Roles, and the Access
-          Matrix.
-        </p>
-        <UsersManager initialUsers={admins} targetUserType="ADMIN" />
+        <div className="rounded-lg border p-6 text-sm text-muted-foreground">
+          <p className="mb-2 font-medium text-foreground">What this zone controls</p>
+          <p>
+            Super Admin owns two things: which applications exist in the system, and
+            who the Admins are. Roles, Employees, and the Access Matrix belong to
+            Admins — one tier down — so they aren&apos;t manageable from here.
+          </p>
+        </div>
       </div>
-    </div>
+    </>
   );
 }
