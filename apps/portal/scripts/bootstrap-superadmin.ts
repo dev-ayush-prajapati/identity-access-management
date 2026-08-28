@@ -67,7 +67,7 @@ async function createKeycloakUser(
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      username: name,
+      username: email,
       email,
       enabled: true,
       emailVerified: true,
@@ -105,9 +105,9 @@ async function main() {
     const token = await getAdminToken(baseUrl, adminUser, adminPassword);
 
     let keycloakId: string;
-    const existingKeycloakUser = await findUserByUsername(baseUrl, realm, token, name);
+    const existingKeycloakUser = await findUserByUsername(baseUrl, realm, token, email);
     if (existingKeycloakUser) {
-      console.log(`Keycloak user "${name}" already exists, reusing it.`);
+      console.log(`Keycloak user "${email}" already exists, reusing it.`);
       keycloakId = existingKeycloakUser.id;
     } else {
       keycloakId = await createKeycloakUser(baseUrl, realm, token, { name, email, password });
@@ -124,7 +124,7 @@ async function main() {
     });
 
     console.log(`Created Postgres User row (id: ${user.id}, userType: SUPERADMIN).`);
-    console.log(`\nDone. Log in at ${baseUrl}/realms/${realm}/account with username "${name}" and the temp password.`);
+    console.log(`\nDone. Log in at ${baseUrl}/realms/${realm}/account with username "${email}" and the temp password.`);
   } finally {
     await prisma.$disconnect();
   }
