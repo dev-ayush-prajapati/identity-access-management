@@ -129,6 +129,19 @@
   }
 }
 
+/* ---------------------------------------------------------------------------
+   Motion utilities
+   ---------------------------------------------------------------------------
+   Every animation here is opt-in via a class and gated behind
+   prefers-reduced-motion: no-preference. The un-animated state is always the
+   final state, so with reduced motion (or no CSS at all) content is fully
+   visible - nothing depends on an animation completing to become readable.
+
+   Stagger: put `.stagger` on a container and its direct children animate in
+   sequence. Delays are declared per nth-child rather than via inline styles so
+   Server Components can use it without shipping any JS.
+   --------------------------------------------------------------------------- */
+
 @keyframes matrix-cell-in {
   from {
     opacity: 0;
@@ -140,9 +153,151 @@
   }
 }
 
+@keyframes fade-up-in {
+  from {
+    opacity: 0;
+    transform: translateY(0.5rem);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes scale-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes pop {
+  0% {
+    transform: scale(1);
+  }
+  45% {
+    transform: scale(1.15);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes shimmer-sweep {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(100%);
+  }
+}
+
 @media (prefers-reduced-motion: no-preference) {
   .matrix-cell {
     opacity: 0;
     animation: matrix-cell-in 0.4s ease-out forwards;
   }
+
+  .animate-fade-up {
+    animation: fade-up-in 0.5s ease-out backwards;
+  }
+
+  .animate-fade-in {
+    animation: fade-in 0.5s ease-out backwards;
+  }
+
+  .animate-scale-in {
+    animation: scale-in 0.35s ease-out backwards;
+  }
+
+  .animate-pop {
+    animation: pop 0.3s ease-out;
+  }
+
+  /* Sequential entrance for a container's direct children. Capped at 12 -
+     past that the delay reads as lag rather than choreography, so later
+     children simply share the last delay. */
+  .stagger > * {
+    animation-delay: 480ms;
+  }
+  .stagger > *:nth-child(1) {
+    animation-delay: 0ms;
+  }
+  .stagger > *:nth-child(2) {
+    animation-delay: 40ms;
+  }
+  .stagger > *:nth-child(3) {
+    animation-delay: 80ms;
+  }
+  .stagger > *:nth-child(4) {
+    animation-delay: 120ms;
+  }
+  .stagger > *:nth-child(5) {
+    animation-delay: 160ms;
+  }
+  .stagger > *:nth-child(6) {
+    animation-delay: 200ms;
+  }
+  .stagger > *:nth-child(7) {
+    animation-delay: 240ms;
+  }
+  .stagger > *:nth-child(8) {
+    animation-delay: 280ms;
+  }
+  .stagger > *:nth-child(9) {
+    animation-delay: 320ms;
+  }
+  .stagger > *:nth-child(10) {
+    animation-delay: 360ms;
+  }
+  .stagger > *:nth-child(11) {
+    animation-delay: 400ms;
+  }
+  .stagger > *:nth-child(12) {
+    animation-delay: 440ms;
+  }
+
+  .skeleton-shimmer::after {
+    animation: shimmer-sweep 1.6s ease-in-out infinite;
+  }
+}
+
+/* Loading placeholder. The sweep is the only moving part, so with reduced
+   motion this stays a static muted block rather than disappearing. */
+.skeleton-shimmer {
+  position: relative;
+  overflow: hidden;
+}
+
+.skeleton-shimmer::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background-image: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in oklch, var(--foreground) 8%, transparent),
+    transparent
+  );
+}
+
+/* Access matrix focus: while any cell is hovered, the rest recede so the grant
+   about to be toggled is unmistakable. Pure CSS via :has() - keeps hover out of
+   React state, which matters on a grid that can be roles x applications big. */
+.matrix-grid:has(.matrix-toggle:hover) .matrix-toggle:not(:hover) {
+  opacity: 0.5;
 }
