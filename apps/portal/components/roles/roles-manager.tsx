@@ -3,9 +3,11 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { MoreHorizontal } from "lucide-react";
+import { MoreHorizontal, Shield } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import GradientButton from "@/components/kokonutui/gradient-button";
+import { ConfirmDialog } from "@/components/common/confirm-dialog";
+import { EmptyState } from "@/components/common/empty-state";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -43,6 +45,11 @@ export function RolesManager({ initialRoles }: RolesManagerProps) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  // Two pieces of state, not one nullable target: the dialog stays mounted
+  // through its close animation, so clearing the target on close would blank
+  // the role's name mid-fade.
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<Role | null>(null);
 
   function openCreateDialog() {
     setEditingId(null);
@@ -86,14 +93,22 @@ export function RolesManager({ initialRoles }: RolesManagerProps) {
     }
   }
 
-  async function handleDelete(role: Role) {
-    if (!confirm(`Delete role "${role.name}"? This cannot be undone.`)) return;
+  function requestDelete(role: Role) {
+    setDeleteTarget(role);
+    setConfirmOpen(true);
+  }
+
+  async function handleDelete() {
+    if (!deleteTarget) return;
+    const role = deleteTarget;
 
     const res = await fetch(`/api/roles/${role.id}`, { method: "DELETE" });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
       toast.error(data.error ?? "Failed to delete");
-      return;
+      // Rejecting is how ConfirmDialog knows to stay open; the toast above
+      // already carries the reason.
+      throw new Error(data.error ?? "Failed to delete");
     }
     setRoles((prev) => prev.filter((r) => r.id !== role.id));
     toast.success("Role deleted");
@@ -106,49 +121,54 @@ export function RolesManager({ initialRoles }: RolesManagerProps) {
         <GradientButton type="button" label="Add Role" variant="purple" onClick={openCreateDialog} />
       </div>
 
-      <div className="rounded-lg border">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead className="w-12" />
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {roles.length === 0 && (
+      {roles.length === 0 ? (
+        <EmptyState
+          icon={Shield}
+          title="No roles yet"
+          description="A role is what decides which applications an employee sees. Create one, then grant it access in the Access Matrix."
+          action={<Button onClick={openCreateDialog}>Add Role</Button>}
+        />
+      ) : (
+        <div className="rounded-lg border">
+          <Table>
+            <TableHeader>
               <TableRow>
-                <TableCell colSpan={2} className="text-center text-muted-foreground">
-                  No roles yet.
-                </TableCell>
+                <TableHead>Name</TableHead>
+                <TableHead className="w-12" />
               </TableRow>
-            )}
-            {roles.map((role) => (
-              <TableRow key={role.id}>
-                <TableCell className="font-medium">{role.name}</TableCell>
-                <TableCell>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger
-                      render={
-                        <Button variant="ghost" size="icon">
-                          <MoreHorizontal className="size-4" />
-                        </Button>
-                      }
-                    />
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem onClick={() => openEditDialog(role)}>
-                        Edit
-                      </DropdownMenuItem>
-                      <DropdownMenuItem variant="destructive" onClick={() => handleDelete(role)}>
-                        Delete
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </div>
+            </TableHeader>
+            <TableBody className="stagger">
+              {roles.map((role) => (
+                <TableRow key={role.id} className="animate-fade-in">
+                  <TableCell className="font-medium">{role.name}</TableCell>
+                  <TableCell>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger
+                        render={
+                          <Button variant="ghost" size="icon">
+                            <MoreHorizontal className="size-4" />
+                          </Button>
+                        }
+                      />
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => openEditDialog(role)}>
+                          Edit
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          variant="destructive"
+                          onClick={() => requestDelete(role)}
+                        >
+                          Delete
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      )}
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent>
@@ -186,6 +206,21 @@ export function RolesManager({ initialRoles }: RolesManagerProps) {
           </form>
         </DialogContent>
       </Dialog>
+
+      <ConfirmDialog
+        open={confirmOpen}
+        onOpenChange={setConfirmOpen}
+        title="Delete this role?"
+        description={
+          deleteTarget
+            ? `"${deleteTarget.name}" is removed for good. If employees are still assigned to it, the delete is blocked until you reassign them.`
+            : ""
+        }
+        confirmLabel="Delete role"
+        pendingLabel="Deleting..."
+        destructive
+        onConfirm={handleDelete}
+      />
     </div>
   );
 }
