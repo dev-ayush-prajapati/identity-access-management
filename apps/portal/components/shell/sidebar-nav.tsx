@@ -33,12 +33,21 @@ export function SidebarNav({ items }: SidebarNavProps) {
             href={item.href}
             aria-current={isActive ? "page" : undefined}
             className={cn(
-              "flex shrink-0 items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors",
+              "relative flex shrink-0 items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors duration-200 ease-out",
               isActive
                 ? "bg-accent font-medium text-accent-foreground"
                 : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
             )}
           >
+            {isActive && (
+              // Marker for the vertical nav only: below md this is a
+              // horizontal strip, where a left-edge bar reads as a divider
+              // between items rather than as "you are here".
+              <span
+                aria-hidden
+                className="animate-fade-in absolute top-1/2 -left-1.5 hidden h-5 w-1 -translate-y-1/2 rounded-full bg-foreground md:block"
+              />
+            )}
             <Icon className="size-4 shrink-0" />
             {item.label}
           </Link>

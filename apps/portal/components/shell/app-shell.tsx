@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { SignOutForm } from "@/components/auth/sign-out-form";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { SidebarNav } from "@/components/shell/sidebar-nav";
+import { CommandPalette } from "@/components/shell/command-palette";
 import type { NavItem } from "@/components/shell/nav-items";
 import type { UserType } from "@/lib/generated/prisma";
 
@@ -56,7 +57,10 @@ export async function AppShell({ zoneLabel, nav, children }: AppShellProps) {
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex items-center justify-between gap-4 border-b px-6 py-3">
+        {/* Sticky so the palette trigger and account controls stay reachable
+            down a long audit log; the translucent background keeps the page
+            visibly scrolling underneath instead of hiding behind a solid bar. */}
+        <header className="sticky top-0 z-30 flex items-center justify-between gap-4 border-b bg-background/85 px-6 py-3 backdrop-blur supports-backdrop-filter:bg-background/65">
           <div className="min-w-0">
             {user && (
               <p className="truncate text-sm">
@@ -69,6 +73,9 @@ export async function AppShell({ zoneLabel, nav, children }: AppShellProps) {
             )}
           </div>
           <div className="flex shrink-0 items-center gap-2">
+            {/* Renders its own trigger — the open state belongs to the client
+                palette, not to this Server Component. */}
+            <CommandPalette nav={nav} />
             <Link
               href="/profile"
               className="text-sm text-muted-foreground underline underline-offset-4 hover:text-foreground md:hidden"
