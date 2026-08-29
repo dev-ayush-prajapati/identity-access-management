@@ -48,7 +48,7 @@ interface RelativeTimeProps {
 export function RelativeTime({ date, className }: RelativeTimeProps) {
   const hasMounted = useHasMounted();
   const value = typeof date === "string" ? new Date(date) : date;
-  const absolute = value.toLocaleString();
+  const absolute = value.toLocaleString("en-US");
 
   return (
     <time dateTime={value.toISOString()} title={absolute} className={className}>
