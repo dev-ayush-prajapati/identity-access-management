@@ -1,14 +1,12 @@
+import Link from "next/link";
+import { AppWindow, KeyRound } from "lucide-react";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
-import { SignOutForm } from "@/components/auth/sign-out-form";
-import { ThemeToggle } from "@/components/theme-toggle";
+import { PageHeader } from "@/components/shell/page-header";
+import { EmptyState } from "@/components/common/empty-state";
+import { AppTile } from "@/components/dashboard/app-tile";
+import { buttonVariants } from "@/components/ui/button";
 import { isHttpUrl } from "@/lib/validate-url";
-import {
-  Card,
-  CardHeader,
-  CardTitle,
-  CardDescription,
-} from "@/components/ui/card";
 
 // Reads the session via auth() (cookies-backed), which already forces
 // per-request rendering — but see the note on /admin and /superadmin: be
@@ -28,61 +26,70 @@ export default async function DashboardPage() {
     : [];
 
   return (
-    <div className="mx-auto w-full max-w-4xl space-y-6 p-8">
-      <div className="flex justify-end gap-2">
-        <ThemeToggle />
-        <SignOutForm />
-      </div>
+    <>
+      <PageHeader
+        breadcrumb={[{ label: "Employee" }, { label: "My Applications" }]}
+        title="Your Applications"
+        description="Apps your Role gives you access to. Click a tile to open it."
+      />
 
-      <div>
-        <h1 className="mb-1 text-2xl font-semibold">Your Applications</h1>
-        <p className="mb-6 text-muted-foreground">
-          Apps your Role gives you access to. Click a tile to open it.
-        </p>
+      {/* The two empty screens have different causes and different fixes, so
+          they must not read the same: no role at all vs. a role nobody has
+          granted anything to yet. */}
+      {!roleId && (
+        <EmptyState
+          icon={KeyRound}
+          title="No role assigned yet"
+          description="A role is what grants access to applications. Ask your admin to assign you one, and the apps it opens will appear here."
+          action={
+            <Link href="/profile" className={buttonVariants({ variant: "outline" })}>
+              View your account
+            </Link>
+          }
+        />
+      )}
 
-        {!roleId && (
-          <p className="text-muted-foreground">
-            No Role assigned yet — contact your Admin.
+      {roleId && applications.length === 0 && (
+        <EmptyState
+          icon={AppWindow}
+          title="No applications yet"
+          description="Your role doesn't have access to any application yet. Ask your admin to grant it access, and anything they add shows up here."
+          action={
+            <Link href="/profile" className={buttonVariants({ variant: "outline" })}>
+              Check your role
+            </Link>
+          }
+        />
+      )}
+
+      {applications.length > 0 && (
+        <>
+          <p className="mb-4 font-mono text-xs text-muted-foreground">
+            {applications.length}{" "}
+            {applications.length === 1 ? "application" : "applications"} granted by
+            your role
           </p>
-        )}
 
-        {roleId && applications.length === 0 && (
-          <p className="text-muted-foreground">
-            Your Role doesn&apos;t have access to any applications yet —
-            contact your Admin.
-          </p>
-        )}
-
-        {applications.length > 0 && (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div className="stagger grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
             {applications.map((app) => {
               // Defense in depth: the API also rejects non-http(s) URLs on
-              // write, but don't trust existing data blindly when it's
-              // about to become a clickable href.
+              // write, but don't trust existing data blindly when it's about
+              // to become a clickable href.
               const safeUrl = isHttpUrl(app.url);
-              const tile = (
-                <Card className={safeUrl ? "transition-shadow hover:shadow-md" : "opacity-60"}>
-                  <CardHeader>
-                    <CardTitle>{app.name}</CardTitle>
-                    <CardDescription>
-                      {safeUrl
-                        ? app.description || app.url
-                        : "Invalid application URL — contact your Admin."}
-                    </CardDescription>
-                  </CardHeader>
-                </Card>
-              );
-              return safeUrl ? (
-                <a key={app.id} href={app.url}>
-                  {tile}
-                </a>
-              ) : (
-                <div key={app.id}>{tile}</div>
+              return (
+                <AppTile
+                  key={app.id}
+                  name={app.name}
+                  description={app.description}
+                  url={app.url}
+                  safe={safeUrl}
+                  className="animate-fade-up"
+                />
               );
             })}
           </div>
-        )}
-      </div>
-    </div>
+        </>
+      )}
+    </>
   );
 }

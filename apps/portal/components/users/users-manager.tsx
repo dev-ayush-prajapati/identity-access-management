@@ -2,9 +2,11 @@
 
 import { useState } from "react";
 import { toast } from "sonner";
-import { MoreHorizontal } from "lucide-react";
+import { MoreHorizontal, UserCog, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import GradientButton from "@/components/kokonutui/gradient-button";
+import { ConfirmDialog } from "@/components/common/confirm-dialog";
+import { EmptyState } from "@/components/common/empty-state";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -59,8 +61,30 @@ export function UsersManager({ initialUsers, targetUserType, roles = [] }: Users
   const [tempCredentials, setTempCredentials] = useState<{ email: string; password: string } | null>(
     null
   );
+  // Two pieces of state, not one nullable target: the dialog stays mounted
+  // through its close animation, so clearing the target on close would blank
+  // the name mid-fade.
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<UserWithRole | null>(null);
 
   const label = targetUserType === "ADMIN" ? "Admin" : "Employee";
+
+  // The two tiers do different jobs, so an empty screen has to explain a
+  // different thing on each.
+  const emptyCopy =
+    targetUserType === "ADMIN"
+      ? {
+          icon: UserCog,
+          title: "No admins yet",
+          description:
+            "Admins manage Roles, Employees, and the Access Matrix. Add one to hand that work over — Admins carry no Role of their own.",
+        }
+      : {
+          icon: Users,
+          title: "No employees yet",
+          description:
+            "Employees sign in with SSO and see only the applications their Role grants them. Add one, then give it a Role.",
+        };
 
   function openCreateDialog() {
     setEditingId(null);
@@ -109,14 +133,22 @@ export function UsersManager({ initialUsers, targetUserType, roles = [] }: Users
     }
   }
 
-  async function handleDelete(user: UserWithRole) {
-    if (!confirm(`Delete "${user.name}"? This cannot be undone.`)) return;
+  function requestDelete(user: UserWithRole) {
+    setDeleteTarget(user);
+    setConfirmOpen(true);
+  }
+
+  async function handleDelete() {
+    if (!deleteTarget) return;
+    const user = deleteTarget;
 
     const res = await fetch(`/api/users/${user.id}`, { method: "DELETE" });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
       toast.error(data.error ?? "Failed to delete");
-      return;
+      // Rejecting is how ConfirmDialog knows to stay open; the toast above
+      // already carries the reason.
+      throw new Error(data.error ?? "Failed to delete");
     }
     setUsers((prev) => prev.filter((u) => u.id !== user.id));
     toast.success(`${label} deleted`);
@@ -133,63 +165,62 @@ export function UsersManager({ initialUsers, targetUserType, roles = [] }: Users
         />
       </div>
 
-      <div className="rounded-lg border">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead>Email</TableHead>
-              {targetUserType === "EMPLOYEE" && <TableHead>Role</TableHead>}
-              <TableHead className="w-12" />
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {users.length === 0 && (
+      {users.length === 0 ? (
+        <EmptyState
+          icon={emptyCopy.icon}
+          title={emptyCopy.title}
+          description={emptyCopy.description}
+          action={<Button onClick={openCreateDialog}>Add {label}</Button>}
+        />
+      ) : (
+        <div className="rounded-lg border">
+          <Table>
+            <TableHeader>
               <TableRow>
-                <TableCell
-                  colSpan={targetUserType === "EMPLOYEE" ? 4 : 3}
-                  className="text-center text-muted-foreground"
-                >
-                  No {label.toLowerCase()}s yet.
-                </TableCell>
+                <TableHead>Name</TableHead>
+                <TableHead>Email</TableHead>
+                {targetUserType === "EMPLOYEE" && <TableHead>Role</TableHead>}
+                <TableHead className="w-12" />
               </TableRow>
-            )}
-            {users.map((user) => (
-              <TableRow key={user.id}>
-                <TableCell className="font-medium">{user.name}</TableCell>
-                <TableCell className="text-muted-foreground">{user.email}</TableCell>
-                {targetUserType === "EMPLOYEE" && (
-                  <TableCell className="text-muted-foreground">
-                    {user.role?.name ?? "—"}
+            </TableHeader>
+            <TableBody className="stagger">
+              {users.map((user) => (
+                <TableRow key={user.id} className="animate-fade-in">
+                  <TableCell className="font-medium">{user.name}</TableCell>
+                  <TableCell className="text-muted-foreground">{user.email}</TableCell>
+                  {targetUserType === "EMPLOYEE" && (
+                    <TableCell className="text-muted-foreground">
+                      {user.role?.name ?? "—"}
+                    </TableCell>
+                  )}
+                  <TableCell>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger
+                        render={
+                          <Button variant="ghost" size="icon">
+                            <MoreHorizontal className="size-4" />
+                          </Button>
+                        }
+                      />
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => openEditDialog(user)}>
+                          Edit
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          variant="destructive"
+                          onClick={() => requestDelete(user)}
+                        >
+                          Delete
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </TableCell>
-                )}
-                <TableCell>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger
-                      render={
-                        <Button variant="ghost" size="icon">
-                          <MoreHorizontal className="size-4" />
-                        </Button>
-                      }
-                    />
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem onClick={() => openEditDialog(user)}>
-                        Edit
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        variant="destructive"
-                        onClick={() => handleDelete(user)}
-                      >
-                        Delete
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </div>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      )}
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent>
@@ -285,6 +316,21 @@ export function UsersManager({ initialUsers, targetUserType, roles = [] }: Users
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ConfirmDialog
+        open={confirmOpen}
+        onOpenChange={setConfirmOpen}
+        title={`Delete this ${label.toLowerCase()}?`}
+        description={
+          deleteTarget
+            ? `${deleteTarget.name} loses their portal account and their Keycloak login, so they can no longer sign in anywhere. This can't be undone.`
+            : ""
+        }
+        confirmLabel={`Delete ${label.toLowerCase()}`}
+        pendingLabel="Deleting..."
+        destructive
+        onConfirm={handleDelete}
+      />
     </div>
   );
 }

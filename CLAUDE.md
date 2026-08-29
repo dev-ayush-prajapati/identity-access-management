@@ -145,6 +145,8 @@ Every `app/api/**/route.ts` with logic of its own has a sibling `route.test.ts` 
 
 Body uses bullet points, not paragraph prose. Skip the body entirely for commits simple enough not to need one. Subject line stays a single line, no bullet.
 
+Each bullet is one precise line — what changed, not a walkthrough of why/how. If a commit touches a lot, group related changes into one bullet instead of listing every file or micro-edit; a body longer than ~4-5 bullets is a sign the commit should probably be split, not a sign to keep listing.
+
 ```
 ❌ Wrong
 feat: add access matrix toggle

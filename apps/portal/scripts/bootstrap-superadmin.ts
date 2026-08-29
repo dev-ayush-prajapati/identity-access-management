@@ -69,6 +69,10 @@ async function createKeycloakUser(
     body: JSON.stringify({
       username: email,
       email,
+      // Matches lib/keycloak-admin.ts, which every other account creation goes
+      // through — without it the SuperAdmin is the one user in the realm with
+      // no display name.
+      firstName: name,
       enabled: true,
       emailVerified: true,
       requiredActions: ["UPDATE_PASSWORD"],

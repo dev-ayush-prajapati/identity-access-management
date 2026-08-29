@@ -1,25 +1,76 @@
 @import "tailwindcss";
 
+/* Deliberately mirrors the portal's neutral scale so the two apps read as one
+   system — which is the whole point of the demo: one organization, one
+   identity, two applications. Kept as plain hex rather than pulling in the
+   portal's OKLCH token file, because the alias is per-app and these two apps
+   cannot import from each other. */
 :root {
   --background: #ffffff;
   --foreground: #171717;
+  --muted: #f5f5f5;
+  --muted-foreground: #737373;
+  --card: #ffffff;
+  --border: #e5e5e5;
+}
+
+/* No next-themes here (finance-app has no client state at all), so dark mode
+   follows the OS rather than offering a toggle. */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0a0a0a;
+    --foreground: #ededed;
+    --muted: #1c1c1c;
+    --muted-foreground: #a1a1a1;
+    --card: #141414;
+    --border: #2a2a2a;
+  }
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-card: var(--card);
+  --color-border: var(--border);
   --font-sans: var(--font-geist-sans);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  /* Was hardcoded to Arial, which silently overrode the Geist font the layout
+     goes to the trouble of loading. */
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+}
+
+@keyframes fade-up-in {
+  from {
+    opacity: 0;
+    transform: translateY(0.5rem);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .animate-fade-up {
+    animation: fade-up-in 0.5s ease-out backwards;
+  }
+
+  .stagger > * {
+    animation-delay: 240ms;
+  }
+  .stagger > *:nth-child(1) {
+    animation-delay: 0ms;
+  }
+  .stagger > *:nth-child(2) {
+    animation-delay: 80ms;
+  }
+  .stagger > *:nth-child(3) {
+    animation-delay: 160ms;
+  }
 }

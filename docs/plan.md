@@ -29,6 +29,27 @@ Forward-looking task list: what's left in Sem3, what's optional Sem3 polish, wha
 - [x] Dark/light theme toggle (was B.1) — `components/theme-provider.tsx` + `components/theme-toggle.tsx`, wired into `/admin`, `/superadmin`, `/dashboard`, `/profile`. `next-themes` was already installed but had no provider — `components/ui/sonner.tsx` was already calling `useTheme()` into a void.
 - [x] Dashboard stat rows (was B.6) — `components/stat-row.tsx`, `/superadmin` shows Applications/Admins counts, `/admin` shows Roles/Employees/Applications counts.
 
+## A3. UI/UX pass + demo data (2026-08-28)
+
+Added after opening the app on a fresh database and finding every screen empty — the app under-sold itself not because features were missing, but because nothing was on screen and nothing said what to do next.
+
+- [x] Landing page — replaced the `create-next-app` leftover (a title and a button) with a real one: what the platform is, an animated Access Matrix preview, how it works, feature cards.
+- [x] Zone layouts + shared `AppShell` — sidebar nav, zone badge, account controls; admin/superadmin split into dedicated sub-pages.
+- [x] Motion system in `app/globals.css` (`.animate-fade-up/-fade-in/-scale-in/-pop`, `.stagger`, `.skeleton-shimmer`) plus shared primitives in `components/common/` (`EmptyState`, `AnimatedNumber`, `Skeleton`, `RelativeTime`, `ConfirmDialog`). All motion is gated behind `prefers-reduced-motion` and the un-animated state is always the final state. No new dependencies — CSS only.
+- [x] Command palette (Cmd/Ctrl+K) — navigation, theme, sign out. Sign out routes through the existing POST-only federated endpoint.
+- [x] Overview dashboards — linkable stat cards that count up, a **setup checklist** that surfaces exactly one next action on an empty database, and a 14-day audit activity chart built from plain divs.
+- [x] Audit log — action badges coloured by verb, relative timestamps, client-side search + category filters, and **CSV export** (`GET /api/audit-log/export`, closes B.10). The export writes its own audit row.
+- [x] Access matrix — `aria-pressed` toggle buttons instead of checkboxes, per-row/column grant counts, live total, sticky role column. Same PATCH contract and optimistic revert as before.
+- [x] Employee dashboard + profile — app tiles with monograms, distinct empty states for no-role vs no-grants, and a per-tier "what your account can do" section.
+- [x] Manager screens — `window.confirm` replaced with a styled pending-aware dialog; empty states that link to the create action; route-level loading skeletons on all 10 data routes.
+- [x] `scripts/seed-demo.ts` — idempotent seeder: 4 roles, 5 applications, a deliberately lopsided matrix (11 of 20 pairs), 1 admin, 6 employees, and audit entries backdated across 14 days. Keycloak account before Postgres row, so a failure never orphans a login. Prints one-use temp passwords. Verified: 27 created on first run, 27 skipped on the second.
+- [x] `apps/finance-app` — the SSO payoff used to land on a bare heading. Now states the session facts (identity provider, its distinct cookie, no password entered here) with a Portal → Keycloak → Finance App diagram. Still no DB and no business logic, by design.
+- [x] Fixed `scripts/bootstrap-superadmin.ts` using the display name as the Keycloak username — a name with a space is rejected (`error-username-invalid-character`), so the SuperAdmin was silently never created and login always failed. Now uses email, matching `lib/keycloak-admin.ts`. Merged as PR #11.
+
+Gate: `npm run lint` clean, `npx tsc --noEmit` clean, `npm run build` clean (every data route still `ƒ (Dynamic)`), `npm test` 78 passing (was 67 — the export route added 11).
+
+Not verified: the authenticated screens have not been clicked through in a browser this session (no browser tooling available), only type-checked, built, and unit-tested. Worth one manual pass before demoing.
+
 ## B. Sem3 — stretch (optional, only if time remains, cheapest first)
 
 1. ~~Dark/light theme toggle~~ — done, see A2.
@@ -40,7 +61,7 @@ Forward-looking task list: what's left in Sem3, what's optional Sem3 polish, wha
 7. **(M)** Keycloak MFA/OTP — mostly realm config; login is already 100% Keycloak-hosted so the apps barely change.
 8. **(M)** Session visibility + force-logout-other-sessions — extends the existing `lib/keycloak-admin.ts` wrapper.
 9. **(M)** Natural-language search or a simple anomaly callout over the Audit Log — a legitimate enterprise IAM trend if you want something AI-flavored, not a bolt-on for optics. Not urgent.
-10. **(S)** Audit log CSV export — rows are already written and rendered; this is a download endpoint over the same query. Cheap, and it's a line item WorkOS charges separately for (~$125/mo), so it's not filler.
+10. ~~Audit log CSV export~~ — done, see A3.
 
 ## C. Sem4 — deferred (real scope, bigger architecture)
 
