@@ -43,6 +43,17 @@ Not verified: authenticated screens haven't been clicked through in a browser th
 - **(M)** Notifications (email instead of one-time on-screen temp password).
 - **(M)** Rate limiting / API abuse protection.
 
+## Deployment (only if a persistent public link is ever needed)
+
+Right now: local-first only, shown live via screen-share (`docs/demo-script.md`) — no public URL needed for that path.
+
+If evaluators ever need to verify the project themselves, independent of a live session:
+
+- Checked **Phase Two** (phasetwo.io, hosted/managed Keycloak) — technically a drop-in swap, same vanilla Keycloak underneath, same OIDC. Rejected: free shared-realm tier was discontinued (2026-07-30), cheapest plan now $149/month. Not worth it for a semester demo.
+- Plan instead, if needed (all free, zero changes to the app's own code): **Oracle Cloud Always Free** Ampere A1 VM (4 OCPU / 24GB RAM, free forever) running the existing `docker-compose.yml` unchanged, plus a free **DuckDNS** subdomain and **Caddy** for automatic Let's Encrypt TLS.
+- Only needed at that point, not before: swap the current dev-placeholder Keycloak client secrets for real ones, update redirect URIs in `keycloak/realm-export.json` from `localhost` to the public domain, set `NEXTAUTH_URL`/`AUTH_URL` for production.
+- Not started. Deployment target stays "not decided" per `docs/planning-notes.md` §1 until this is actually acted on.
+
 ## Competitive landscape (where this project sits, and deliberately doesn't)
 
 Checked WorkOS (workos.com) as the nearest well-known commercial player. Useful conclusion: **it is not the same product, and should not be used as a feature checklist.**
