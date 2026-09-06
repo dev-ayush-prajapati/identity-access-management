@@ -48,6 +48,37 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
+/* Landing-page-only palette (dark editorial fintech aesthetic, per
+   docs/plan.md's design reference). Namespaced under slash- so it never
+   touches the shared shadcn tokens below - used exclusively by the signed-out
+   state of app/page.tsx. Every other page keeps the theme-adaptive palette. */
+@theme {
+  --color-slash-obsidian: #08080a;
+  --color-slash-onyx: #040406;
+  --color-slash-carbon: #121317;
+  --color-slash-graphite: #1c1d22;
+  --color-slash-slate: #2e3038;
+  --color-slash-smoke: #464853;
+  --color-slash-ash: #5e616e;
+  --color-slash-steel: #777a88;
+  --color-slash-fog: #9194a1;
+  --color-slash-mist: #acafb9;
+  --color-slash-silver: #c7c9d1;
+  --color-slash-bone: #e2e3e9;
+  --color-slash-paper: #ffffff;
+  --color-slash-copper: #cc9166;
+}
+
+:root {
+  --gradient-slash-gilded: linear-gradient(
+    103deg,
+    rgb(174, 147, 87),
+    rgb(255, 240, 204) 40%,
+    rgb(174, 147, 87) 70%,
+    rgba(189, 157, 79, 0)
+  );
+}
+
 :root {
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
@@ -272,6 +303,43 @@
 
   .skeleton-shimmer::after {
     animation: shimmer-sweep 1.6s ease-in-out infinite;
+  }
+
+  /* Landing hero: a small breathing dot next to a "live" label. */
+  .pulse-dot::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: inherit;
+    animation: pulse-ring 2s ease-out infinite;
+  }
+
+  /* Landing hero: one-time diagonal light sweep across the matrix card, cueing
+     that the grid just finished computing - runs once on load, then stops. */
+  .scan-once::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    transform: translateX(-100%);
+    background-image: linear-gradient(
+      100deg,
+      transparent,
+      color-mix(in oklch, white 6%, transparent),
+      transparent
+    );
+    animation: shimmer-sweep 1.4s ease-out 0.3s 1 both;
+  }
+}
+
+@keyframes pulse-ring {
+  from {
+    opacity: 0.6;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(2.2);
   }
 }
 

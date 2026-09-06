@@ -19,6 +19,17 @@ Gate: `npm run lint` / `tsc --noEmit` / `npm run build` clean, `npm test` 78 pas
 
 Not verified: authenticated screens haven't been clicked through in a browser this session — worth one manual pass before demoing.
 
+## Next candidates (ranked by demo-impact vs effort)
+
+Nothing selected yet — shortlist to pick from next, ranked for a non-technical demo audience vs implementation effort:
+
+1. **Keycloak MFA/OTP** (B.7, M) — real 2FA login step, big "wow" for an IAM demo; mostly realm config, login already 100% Keycloak-hosted so app code barely changes.
+2. **Access-request / approval workflow** (C, M) — new feature end-to-end: Employee requests an app, Admin approves/denies. Follows the exact CRUD pattern already used for Roles/Applications/Users; rounds out the RBAC story.
+3. **Session visibility + force-logout-other-sessions** (B.8, M) — extends the existing `lib/keycloak-admin.ts` wrapper, genuinely useful security feature.
+4. **Keycloak brute-force lockout + password policy** (B.2, B.3, XS each) — pure realm config, near-zero effort, good "we thought about security" checkbox.
+
+SCIM/directory sync (C) remains the highest real-world value item but is a full mini-project (L), not a quick add.
+
 ## B. Sem3 — stretch (optional, only if time remains, cheapest first)
 
 1. ~~Dark/light theme toggle~~ — done, see Done section above.
