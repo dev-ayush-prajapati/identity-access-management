@@ -9,7 +9,14 @@ import {
   activityWindowStart,
   bucketActivityByDay,
 } from "@/components/stats/activity-chart";
+import {
+  RoleDistributionChart,
+  AccessByApplicationChart,
+  EmployeeGrowthChart,
+} from "@/components/stats/admin-charts";
+import { growthWindowStart, bucketWeeklyGrowth } from "@/components/stats/growth-bucket";
 import { SetupChecklist } from "@/components/onboarding/setup-checklist";
+import { EmployeesPreview } from "@/components/users/employees-preview";
 
 // This page has no direct call to a dynamic API (cookies/headers), so
 // Next.js would otherwise treat it as static and prerender it once at
@@ -19,6 +26,7 @@ export const dynamic = "force-dynamic";
 // The overview shows just enough recent activity to be useful as a landing
 // page; the full log lives on /admin/audit.
 const RECENT_ACTIVITY_LIMIT = 5;
+const EMPLOYEES_PREVIEW_LIMIT = 6;
 
 export default async function AdminOverviewPage() {
   const [
@@ -28,6 +36,10 @@ export default async function AdminOverviewPage() {
     grantCount,
     recentActivity,
     windowActivity,
+    employeesPreview,
+    rolesWithCounts,
+    applicationsWithCounts,
+    employeeGrowthSource,
   ] = await Promise.all([
     prisma.role.count(),
     prisma.user.count({ where: { userType: "EMPLOYEE" } }),
@@ -44,7 +56,35 @@ export default async function AdminOverviewPage() {
       where: { createdAt: { gte: activityWindowStart() } },
       select: { createdAt: true },
     }),
+    prisma.user.findMany({
+      where: { userType: "EMPLOYEE" },
+      include: { role: true },
+      orderBy: { createdAt: "desc" },
+      take: EMPLOYEES_PREVIEW_LIMIT,
+    }),
+    prisma.role.findMany({
+      include: { _count: { select: { users: true } } },
+      orderBy: { createdAt: "asc" },
+    }),
+    prisma.application.findMany({
+      include: { _count: { select: { access: true } } },
+      orderBy: { createdAt: "asc" },
+    }),
+    prisma.user.findMany({
+      where: { userType: "EMPLOYEE", createdAt: { gte: growthWindowStart() } },
+      select: { createdAt: true },
+    }),
   ]);
+
+  const roleDistribution = rolesWithCounts.map((role) => ({
+    role: role.name,
+    employees: role._count.users,
+  }));
+  const applicationGrants = applicationsWithCounts.map((application) => ({
+    application: application.name,
+    grants: application._count.access,
+  }));
+  const employeeGrowth = bucketWeeklyGrowth(employeeGrowthSource);
 
   return (
     <>
@@ -63,6 +103,7 @@ export default async function AdminOverviewPage() {
             value={roleCount}
             hint="Employees inherit access through these."
             href="/admin/roles"
+            accent="var(--chart-2)"
           />
           <StatCard
             className="animate-fade-up"
@@ -71,6 +112,7 @@ export default async function AdminOverviewPage() {
             value={employeeCount}
             hint="Each one carries a single role."
             href="/admin/employees"
+            accent="var(--chart-3)"
           />
           <StatCard
             className="animate-fade-up"
@@ -78,6 +120,7 @@ export default async function AdminOverviewPage() {
             label="Applications"
             value={applicationCount}
             hint="The catalog belongs to Super Admin."
+            accent="var(--chart-4)"
           />
           <StatCard
             className="animate-fade-up"
@@ -86,46 +129,64 @@ export default async function AdminOverviewPage() {
             value={grantCount}
             hint="Role and application pairs switched on."
             href="/admin/access"
+            accent="var(--chart-1)"
           />
         </div>
 
-        <div className="stagger grid gap-4 lg:grid-cols-2">
-          <SetupChecklist
-            className="animate-fade-up"
-            title="Set up access"
-            steps={[
-              {
-                label: "Create a role",
-                description:
-                  "Access is granted to roles, never to people directly, so nothing can be handed out until one exists.",
-                href: "/admin/roles",
-                cta: "Create a role",
-                done: roleCount > 0,
-              },
-              {
-                label: "Add an employee",
-                description:
-                  "An employee gets exactly one role, and that role is what decides everything they see.",
-                href: "/admin/employees",
-                cta: "Add an employee",
-                done: employeeCount > 0,
-              },
-              {
-                label: "Grant access",
-                description:
-                  "Switching on a role and application pair is what makes that app appear on an employee's dashboard.",
-                href: "/admin/access",
-                cta: "Grant access",
-                done: grantCount > 0,
-              },
-            ]}
-          />
-
-          <ActivityChart
-            className="animate-fade-up"
-            days={bucketActivityByDay(windowActivity)}
-          />
+        <div>
+          <h2 className="mb-4 text-lg font-semibold">Directory</h2>
+          <div className="stagger grid gap-4 lg:grid-cols-2">
+            <EmployeesPreview
+              className="animate-fade-up"
+              employees={employeesPreview}
+              totalCount={employeeCount}
+            />
+            <RoleDistributionChart className="animate-fade-up" data={roleDistribution} />
+          </div>
         </div>
+
+        <div>
+          <h2 className="mb-4 text-lg font-semibold">Analytics</h2>
+          <div className="stagger grid gap-4 lg:grid-cols-2">
+            <EmployeeGrowthChart className="animate-fade-up" data={employeeGrowth} />
+            <AccessByApplicationChart className="animate-fade-up" data={applicationGrants} />
+            <ActivityChart
+              className="animate-fade-up lg:col-span-2"
+              days={bucketActivityByDay(windowActivity)}
+            />
+          </div>
+        </div>
+
+        <SetupChecklist
+          className="animate-fade-up"
+          title="Set up access"
+          steps={[
+            {
+              label: "Create a role",
+              description:
+                "Access is granted to roles, never to people directly, so nothing can be handed out until one exists.",
+              href: "/admin/roles",
+              cta: "Create a role",
+              done: roleCount > 0,
+            },
+            {
+              label: "Add an employee",
+              description:
+                "An employee gets exactly one role, and that role is what decides everything they see.",
+              href: "/admin/employees",
+              cta: "Add an employee",
+              done: employeeCount > 0,
+            },
+            {
+              label: "Grant access",
+              description:
+                "Switching on a role and application pair is what makes that app appear on an employee's dashboard.",
+              href: "/admin/access",
+              cta: "Grant access",
+              done: grantCount > 0,
+            },
+          ]}
+        />
 
         <div>
           <div className="mb-4 flex items-end justify-between gap-4">
