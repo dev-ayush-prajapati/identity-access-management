@@ -129,7 +129,7 @@ export default async function Home() {
           IAM Portal
         </span>
         <Link
-          href="/api/auth/signin"
+          href="/sign-in"
           className={cn(
             "rounded-full border border-slash-paper/80 px-5 py-2 text-sm font-medium text-slash-paper transition-colors hover:bg-slash-paper/10",
             focusRing
@@ -164,7 +164,7 @@ export default async function Home() {
               </p>
               <div className="animate-fade-up flex flex-col gap-2 sm:flex-row sm:items-center">
                 <Link
-                  href="/api/auth/signin"
+                  href="/sign-in"
                   className={cn(
                     "rounded-full bg-slash-paper px-6 py-3 text-sm font-medium text-black transition-transform duration-200 hover:scale-[1.03] hover:opacity-90",
                     focusRing

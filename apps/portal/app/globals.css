@@ -241,6 +241,16 @@
   }
 }
 
+@keyframes floating-path-drift {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 0.85;
+  }
+}
+
 @media (prefers-reduced-motion: no-preference) {
   .matrix-cell {
     opacity: 0;
@@ -318,6 +328,12 @@
     border-radius: inherit;
     background: inherit;
     animation: pulse-ring 2s ease-out infinite;
+  }
+
+  /* Sign-in brand panel: strokes breathe in and out at staggered delays
+     (set inline per-path via animationDelay) so they read as drifting. */
+  .floating-path {
+    animation: floating-path-drift 6s ease-in-out infinite;
   }
 
   /* Landing hero: one-time diagonal light sweep across the matrix card, cueing
