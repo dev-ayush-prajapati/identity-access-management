@@ -13,20 +13,37 @@ Full bug-by-bug history for all three lives in `docs/planning-notes.md`.
 
 - **Sem3 core** — Profile page, Audit Log viewer, Application delete guard, root README, live browser verification (SuperAdmin + Admin accounts). Merged `feat/sem3-wrapup` → PR #8 → `main`.
 - **Demo readiness** — `docs/demo-script.md`, dark/light theme toggle, dashboard stat rows. Merged `feat/dashboard-polish` → PR #9 → `main`.
-- **UI/UX pass + demo data** (2026-08-28) — landing page, zone layouts + `AppShell`, motion system, command palette, dashboard rebuilds, audit log CSV export, access matrix redesign, employee dashboard/profile redesign, manager screen polish, idempotent `scripts/seed-demo.ts`, finance-app SSO payoff page, bootstrap-superadmin username fix (PR #11). On `feat/sem3-ui-pass`, not yet merged to `main`.
+- **UI/UX pass + demo data** (2026-08-28 through 2026-09-09) — landing page, zone layouts + `AppShell`, motion system, command palette, dashboard rebuilds, audit log CSV export, access matrix redesign, employee dashboard/profile redesign, manager screen polish, idempotent `scripts/seed-demo.ts`, finance-app SSO payoff page, bootstrap-superadmin username fix (PR #11); plus landing page dark palette/activity feed, real-data admin analytics charts + employees preview, and the `/sign-in` interstitial page (all logged in `docs/planning-notes.md`'s "Post-roadmap: UI/UX pass, part 2" as of 2026-09-11). On `feat/sem3-ui-pass`, not yet merged to `main` — merge deferred until the rebuild below lands (see `docs/session-log.md`).
 
-Gate: `npm run lint` / `tsc --noEmit` / `npm run build` clean, `npm test` 78 passing.
+Gate: `npm run lint` / `tsc --noEmit` / `npm run build` clean, `npm test` 78 passing (verify against `npm test`'s own output, not this line — it has drifted before).
 
 Not verified: authenticated screens haven't been clicked through in a browser this session — worth one manual pass before demoing.
 
-## Next candidates (ranked by demo-impact vs effort)
+## Correctness rebuild (in progress, supersedes "Next candidates" below)
 
-Nothing selected yet — shortlist to pick from next, ranked for a non-technical demo audience vs implementation effort:
+A full audit on 2026-09-11 (see `docs/session-log.md`) found the RBAC/audit story doesn't hold up under a direct probe: the Access Matrix only decides what renders on `/dashboard` — `apps/finance-app` has no authorization check at all, so any valid Keycloak session opens it regardless of role — and sessions are never re-checked against Postgres after login, so deleting, demoting, or reassigning a user has no effect until they re-login. `docs/demo-script.md` claimed enforcement that didn't exist; corrected.
 
-1. **Keycloak MFA/OTP** (B.7, M) — real 2FA login step, big "wow" for an IAM demo; mostly realm config, login already 100% Keycloak-hosted so app code barely changes.
+Decided: reopen the data model where needed (adding a `Permission` entity is in scope), prioritize making the system's existing claims true over adding new features. This demotes MFA/session-visibility/approval-workflow below — they're real, but they decorate a gate that doesn't exist yet.
+
+Phases, in order (each is its own chunk of work, own tests, own gate run):
+
+0. ✅ **Doc honesty + CI** — done. Fixed the false claims in `demo-script.md`, reconciled doc drift, added `.github/workflows/ci.yml` (lint/typecheck/test/build for both apps on push — uses `./node_modules/.bin/prisma generate`, not `npx prisma`, see the Phase 1 tooling note below).
+1. ✅ **Revocation** — done. `requireUserType` (`lib/api-auth.ts`) now re-reads `userType`/`roleId`/`status` from Postgres on every call instead of trusting the session JWT (only refreshed at login); `/dashboard` reads `roleId` the same way. Added `User.status` (ACTIVE/DISABLED, migration `20260911181800_add_user_status_and_indexes`, which also added the 4 missing indexes from finding 12). `signIn` rejects a disabled user at login too. Skipped `tokenVersion` and shortening `session.maxAge` — the direct-DB-read approach makes both redundant, so adding them would be pure extra surface for no correctness gain. 83 tests passing (was 78). Full detail and a real tooling gotcha (`npx prisma` grabbing an incompatible 8.x instead of the pinned 7.x) in `docs/session-log.md`, 2026-09-11.
+2. **Real enforcement** — a `POST /api/authz/check` policy-decision endpoint in the portal; `finance-app` gains a `signIn` callback that calls it instead of accepting any Keycloak session. This is what makes the Access Matrix actually gate something outside the portal.
+3. **Joiner/mover/leaver** — disable/enable instead of hard delete, promote/demote with last-SuperAdmin and self-demote guards, forced password reset trigger. `AuditLog.userId` stops going `SET NULL` on delete.
+4. **Audit log that deserves the name** — structured fields (`targetType`/`targetId`/`metadata`/`outcome`), real `LOGIN_SUCCESS`/`LOGIN_DENIED`/`LOGOUT`/`ACCESS_DENIED` events (today there are zero auth events logged despite the log claiming to cover logins), server-side pagination past the current 100-row cap.
+5. **Keycloak done properly** — replace the master-realm admin password grant (`lib/keycloak-admin.ts`) with a realm-scoped service-account client; then the realm-hardening items in B.2/B.3 below, plus token/session lifespans.
+6. **Integrity + UI correctness** — FKs changed to match the documented 409-block behavior (today `User.roleId`/`RoleAccess` silently `SET NULL`/`CASCADE`, contradicting `CLAUDE.md`); fix the missing `catch` in every manager's optimistic `fetch` (a network failure today shows a grant as succeeded when nothing was written).
+7. **Presentation honesty** — resolve the `/sign-in` page vs middleware inconsistency (middleware bypasses it entirely), decide what to do with the landing page's hardcoded "activity feed"/stats now that Phase 4 makes some of it capable of being real.
+
+## Next candidates (deprioritized until the rebuild above lands)
+
+Ranked for a non-technical demo audience vs implementation effort — kept for after Phase 0-7, not before:
+
+1. **Keycloak MFA/OTP** (B.7, M) — real 2FA login step; mostly realm config. Deliberately not first anymore: a second factor in front of an access matrix that doesn't gate anything yet is a lock on a doorframe with no wall.
 2. **Access-request / approval workflow** (C, M) — new feature end-to-end: Employee requests an app, Admin approves/denies. Follows the exact CRUD pattern already used for Roles/Applications/Users; rounds out the RBAC story.
 3. **Session visibility + force-logout-other-sessions** (B.8, M) — extends the existing `lib/keycloak-admin.ts` wrapper, genuinely useful security feature.
-4. **Keycloak brute-force lockout + password policy** (B.2, B.3, XS each) — pure realm config, near-zero effort, good "we thought about security" checkbox.
+4. **Keycloak brute-force lockout + password policy** (B.2, B.3, XS each) — pure realm config, near-zero effort, good "we thought about security" checkbox — folded into Phase 5 above.
 
 SCIM/directory sync (C) remains the highest real-world value item but is a full mini-project (L), not a quick add.
 

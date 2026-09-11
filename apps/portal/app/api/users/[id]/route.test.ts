@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fakeSession, jsonRequest, paramsOf } from "@/test/helpers";
 
-const { authMock, prismaMock, logAuditMock, deleteKeycloakUserMock } = vi.hoisted(() => ({
+const { authMock, prismaMock, userLookupMock, logAuditMock, deleteKeycloakUserMock } = vi.hoisted(() => ({
   authMock: vi.fn(),
   prismaMock: {
     user: {
@@ -13,6 +13,13 @@ const { authMock, prismaMock, logAuditMock, deleteKeycloakUserMock } = vi.hoiste
       findUnique: vi.fn(),
     },
   },
+  // `prisma.user.findUnique` now serves two different callers within a
+  // single request: `requireUserType`'s own live-status check (keyed by the
+  // caller's session id) and this route's target-user lookup (keyed by the
+  // URL param). The mock below dispatches on which one a given call is;
+  // route-under-test behavior is configured through this stand-in instead of
+  // `prismaMock.user.findUnique` directly.
+  userLookupMock: vi.fn(),
   logAuditMock: vi.fn(),
   deleteKeycloakUserMock: vi.fn(),
 }));
@@ -47,6 +54,13 @@ const admin = {
 beforeEach(() => {
   vi.clearAllMocks();
   authMock.mockResolvedValue(fakeSession({ userType: "ADMIN" }));
+  prismaMock.user.findUnique.mockImplementation(async (args: { where: { id: string } }) => {
+    const session = await authMock();
+    if (session?.user && args.where.id === session.user.id) {
+      return { userType: session.user.userType, roleId: session.user.roleId, status: "ACTIVE" };
+    }
+    return userLookupMock(args);
+  });
 });
 
 describe("PATCH /api/users/[id]", () => {
@@ -56,11 +70,11 @@ describe("PATCH /api/users/[id]", () => {
     const res = await PATCH(jsonRequest(URL_, "PATCH", { name: "Amy" }), paramsOf("u1"));
 
     expect(res.status).toBe(403);
-    expect(prismaMock.user.findUnique).not.toHaveBeenCalled();
+    expect(userLookupMock).not.toHaveBeenCalled();
   });
 
   it("404s when the user doesn't exist", async () => {
-    prismaMock.user.findUnique.mockResolvedValue(null);
+    userLookupMock.mockResolvedValue(null);
 
     const res = await PATCH(jsonRequest(URL_, "PATCH", { name: "Amy" }), paramsOf("u1"));
 
@@ -69,7 +83,7 @@ describe("PATCH /api/users/[id]", () => {
   });
 
   it("404s when an Admin targets another Admin (outside their tier)", async () => {
-    prismaMock.user.findUnique.mockResolvedValue(admin);
+    userLookupMock.mockResolvedValue(admin);
 
     const res = await PATCH(jsonRequest(URL_, "PATCH", { name: "Bob" }), paramsOf("u2"));
 
@@ -79,7 +93,7 @@ describe("PATCH /api/users/[id]", () => {
 
   it("404s when a SuperAdmin targets an Employee (outside their tier)", async () => {
     authMock.mockResolvedValue(fakeSession({ userType: "SUPERADMIN" }));
-    prismaMock.user.findUnique.mockResolvedValue(employee);
+    userLookupMock.mockResolvedValue(employee);
 
     const res = await PATCH(jsonRequest(URL_, "PATCH", { name: "Amy" }), paramsOf("u1"));
 
@@ -88,7 +102,7 @@ describe("PATCH /api/users/[id]", () => {
   });
 
   it("400s on an empty name", async () => {
-    prismaMock.user.findUnique.mockResolvedValue(employee);
+    userLookupMock.mockResolvedValue(employee);
 
     const res = await PATCH(jsonRequest(URL_, "PATCH", { name: "   " }), paramsOf("u1"));
 
@@ -97,7 +111,7 @@ describe("PATCH /api/users/[id]", () => {
   });
 
   it("400s when an Employee's roleId is explicitly cleared", async () => {
-    prismaMock.user.findUnique.mockResolvedValue(employee);
+    userLookupMock.mockResolvedValue(employee);
 
     const res = await PATCH(
       jsonRequest(URL_, "PATCH", { name: "Amy", roleId: "" }),
@@ -109,7 +123,7 @@ describe("PATCH /api/users/[id]", () => {
   });
 
   it("400s when the given roleId doesn't exist", async () => {
-    prismaMock.user.findUnique.mockResolvedValue(employee);
+    userLookupMock.mockResolvedValue(employee);
     prismaMock.role.findUnique.mockResolvedValue(null);
 
     const res = await PATCH(
@@ -123,7 +137,7 @@ describe("PATCH /api/users/[id]", () => {
 
   it("updates an Employee's name and role, and audit-logs it", async () => {
     authMock.mockResolvedValue(fakeSession({ userType: "ADMIN", id: "admin-1" }));
-    prismaMock.user.findUnique.mockResolvedValue(employee);
+    userLookupMock.mockResolvedValue(employee);
     prismaMock.role.findUnique.mockResolvedValue({ id: "r2", name: "Finance" });
     prismaMock.user.update.mockResolvedValue({ ...employee, name: "Amy Smith", roleId: "r2" });
 
@@ -148,7 +162,7 @@ describe("PATCH /api/users/[id]", () => {
 
   it("ignores a roleId sent for an Admin — Admins never carry a Role", async () => {
     authMock.mockResolvedValue(fakeSession({ userType: "SUPERADMIN", id: "boss-1" }));
-    prismaMock.user.findUnique.mockResolvedValue(admin);
+    userLookupMock.mockResolvedValue(admin);
     prismaMock.user.update.mockResolvedValue({ ...admin, name: "Bobby" });
 
     const res = await PATCH(
@@ -180,7 +194,7 @@ describe("DELETE /api/users/[id]", () => {
   });
 
   it("404s when the user doesn't exist", async () => {
-    prismaMock.user.findUnique.mockResolvedValue(null);
+    userLookupMock.mockResolvedValue(null);
 
     const res = await DELETE(jsonRequest(URL_, "DELETE"), paramsOf("u1"));
 
@@ -189,7 +203,7 @@ describe("DELETE /api/users/[id]", () => {
   });
 
   it("404s when an Admin targets another Admin (outside their tier)", async () => {
-    prismaMock.user.findUnique.mockResolvedValue(admin);
+    userLookupMock.mockResolvedValue(admin);
 
     const res = await DELETE(jsonRequest(URL_, "DELETE"), paramsOf("u2"));
 
@@ -199,7 +213,7 @@ describe("DELETE /api/users/[id]", () => {
   });
 
   it("502s when the Keycloak delete fails, and leaves the Postgres row intact", async () => {
-    prismaMock.user.findUnique.mockResolvedValue(employee);
+    userLookupMock.mockResolvedValue(employee);
     deleteKeycloakUserMock.mockRejectedValue(new Error("Keycloak down"));
 
     const res = await DELETE(jsonRequest(URL_, "DELETE"), paramsOf("u1"));
@@ -213,7 +227,7 @@ describe("DELETE /api/users/[id]", () => {
 
   it("deletes the Keycloak account and the Postgres row, and audit-logs it", async () => {
     authMock.mockResolvedValue(fakeSession({ userType: "ADMIN", id: "admin-1" }));
-    prismaMock.user.findUnique.mockResolvedValue(employee);
+    userLookupMock.mockResolvedValue(employee);
     deleteKeycloakUserMock.mockResolvedValue(undefined);
     prismaMock.user.delete.mockResolvedValue(employee);
 

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fakeSession, jsonRequest } from "@/test/helpers";
+import { fakeSession, jsonRequest, mockLiveCallerFromSession } from "@/test/helpers";
 
 const { authMock, prismaMock, logAuditMock } = vi.hoisted(() => ({
   authMock: vi.fn(),
@@ -9,6 +9,7 @@ const { authMock, prismaMock, logAuditMock } = vi.hoisted(() => ({
       findUnique: vi.fn(),
       create: vi.fn(),
     },
+    user: { findUnique: vi.fn() },
   },
   logAuditMock: vi.fn(),
 }));
@@ -20,6 +21,10 @@ vi.mock("@/lib/audit", () => ({ logAudit: logAuditMock }));
 import { GET, POST } from "./route";
 
 const URL_ = "http://localhost:3000/api/applications";
+
+beforeEach(() => {
+  mockLiveCallerFromSession(authMock, prismaMock.user.findUnique);
+});
 
 describe("GET /api/applications", () => {
   beforeEach(() => {

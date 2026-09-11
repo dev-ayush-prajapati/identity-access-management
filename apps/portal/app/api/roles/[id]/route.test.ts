@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fakeSession, jsonRequest, paramsOf } from "@/test/helpers";
+import { fakeSession, jsonRequest, paramsOf, mockLiveCallerFromSession } from "@/test/helpers";
 
 const { authMock, prismaMock, logAuditMock } = vi.hoisted(() => ({
   authMock: vi.fn(),
@@ -10,6 +10,7 @@ const { authMock, prismaMock, logAuditMock } = vi.hoisted(() => ({
     },
     user: {
       count: vi.fn(),
+      findUnique: vi.fn(),
     },
   },
   logAuditMock: vi.fn(),
@@ -26,6 +27,7 @@ const URL_ = "http://localhost:3000/api/roles/r1";
 beforeEach(() => {
   vi.clearAllMocks();
   authMock.mockResolvedValue(fakeSession({ userType: "ADMIN" }));
+  mockLiveCallerFromSession(authMock, prismaMock.user.findUnique);
 });
 
 describe("PATCH /api/roles/[id]", () => {

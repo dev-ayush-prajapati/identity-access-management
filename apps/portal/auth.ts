@@ -9,13 +9,15 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   callbacks: {
     ...authConfig.callbacks,
     // Keycloak proves identity; Postgres decides authorization. A Keycloak
-    // login with no matching User row is not allowed into the app.
+    // login with no matching, active User row is not allowed into the app —
+    // this is also where a disabled account is turned away, not just at the
+    // API layer.
     async signIn({ profile }) {
       if (!profile?.sub) return false;
       const user = await prisma.user.findUnique({
         where: { keycloakId: profile.sub },
       });
-      return !!user;
+      return !!user && user.status === "ACTIVE";
     },
     // `profile`/`account` are only present on the initial sign-in request;
     // on later requests (token refresh) we just pass the token through

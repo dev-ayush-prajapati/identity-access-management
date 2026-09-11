@@ -13,12 +13,23 @@ enum UserType {
   EMPLOYEE
 }
 
+// ACTIVE is the only status a user can be created with; DISABLED is set by an
+// Admin/SuperAdmin action (see api/users/[id]/route.ts) and is checked fresh
+// from Postgres on every request — never cached in the session JWT — so
+// disabling someone takes effect on their very next request, not their next
+// login.
+enum UserStatus {
+  ACTIVE
+  DISABLED
+}
+
 model User {
   id           String     @id @default(cuid())
   keycloakId   String     @unique
   name         String
   email        String     @unique
   userType     UserType
+  status       UserStatus @default(ACTIVE)
   role         Role?      @relation(fields: [roleId], references: [id])
   roleId       String?
   createdBy    User?      @relation("UserCreatedBy", fields: [createdById], references: [id])
@@ -27,6 +38,9 @@ model User {
   auditLogs    AuditLog[]
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
+
+  @@index([roleId])
+  @@index([userType])
 }
 
 model Role {
@@ -64,4 +78,7 @@ model AuditLog {
   action    String
   details   String?
   createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([userId])
 }

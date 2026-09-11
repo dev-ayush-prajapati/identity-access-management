@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import type { Session } from "next-auth";
+import type { Mock } from "vitest";
 import type { UserType } from "@/lib/generated/prisma";
 
 // Shared fixtures for API route tests — keeps each route.test.ts focused on
@@ -30,4 +31,25 @@ export function jsonRequest(url: string, method: string, body?: unknown): NextRe
 
 export function paramsOf(id: string): { params: Promise<{ id: string }> } {
   return { params: Promise.resolve({ id }) };
+}
+
+// `requireUserType` re-reads the caller's live status/userType/roleId from
+// Postgres on every call (see lib/api-auth.ts) instead of trusting the
+// session's JWT claims. For a route whose own logic never calls
+// `prisma.user.findUnique` itself, this wires that lookup to just mirror
+// whatever the test's mocked `auth()` currently resolves to, as an ACTIVE
+// user — so route tests can keep configuring `authMock` the way they always
+// have, with no per-test awareness of the live-status check underneath.
+//
+// Not for routes whose own logic also calls `prisma.user.findUnique` (e.g.
+// a target-user lookup, or a duplicate-email check) — those need to
+// dispatch on the `where` shape themselves, since this call and the
+// caller-check both go through the same mocked function. See
+// app/api/users/route.test.ts and app/api/users/[id]/route.test.ts.
+export function mockLiveCallerFromSession(authMock: Mock, findUniqueMock: Mock): void {
+  findUniqueMock.mockImplementation(async () => {
+    const session = (await authMock()) as Session | null;
+    if (!session?.user) return null;
+    return { userType: session.user.userType, roleId: session.user.roleId, status: "ACTIVE" };
+  });
 }
