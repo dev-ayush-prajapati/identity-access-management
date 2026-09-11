@@ -15,6 +15,9 @@ interface StatCardProps {
   // act on it (an Admin can't edit the application catalog): a hover lift that
   // leads to a 404 is worse than no affordance at all.
   href?: string;
+  // A --chart-N token to tint the icon chip with. Optional — omitting it
+  // keeps the plain muted icon every existing StatCard already uses.
+  accent?: string;
   className?: string;
 }
 
@@ -26,6 +29,7 @@ export function StatCard({
   value,
   hint,
   href,
+  accent,
   className,
 }: StatCardProps) {
   const body = (
@@ -34,7 +38,16 @@ export function StatCard({
         <span className="text-3xl leading-none font-semibold tracking-tight">
           <AnimatedNumber value={value} />
         </span>
-        <Icon className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+        {accent ? (
+          <div
+            className="flex size-8 shrink-0 items-center justify-center rounded-lg"
+            style={{ backgroundColor: `color-mix(in oklch, ${accent} 16%, transparent)` }}
+          >
+            <Icon className="size-4 shrink-0" style={{ color: accent }} aria-hidden />
+          </div>
+        ) : (
+          <Icon className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+        )}
       </div>
       <div className="flex items-center gap-1.5">
         <span className="text-sm font-medium">{label}</span>

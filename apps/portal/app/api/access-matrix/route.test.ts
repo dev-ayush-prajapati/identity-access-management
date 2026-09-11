@@ -1,5 +1,5 @@
 import { beforeEach, expect, it, vi } from "vitest";
-import { fakeSession, jsonRequest } from "@/test/helpers";
+import { fakeSession, jsonRequest, mockLiveCallerFromSession } from "@/test/helpers";
 
 const { authMock, prismaMock, logAuditMock } = vi.hoisted(() => ({
   authMock: vi.fn(),
@@ -7,6 +7,7 @@ const { authMock, prismaMock, logAuditMock } = vi.hoisted(() => ({
     role: { findUnique: vi.fn() },
     application: { findUnique: vi.fn() },
     roleAccess: { upsert: vi.fn(), deleteMany: vi.fn() },
+    user: { findUnique: vi.fn() },
   },
   logAuditMock: vi.fn(),
 }));
@@ -24,6 +25,7 @@ beforeEach(() => {
   authMock.mockResolvedValue(fakeSession({ userType: "ADMIN" }));
   prismaMock.role.findUnique.mockResolvedValue({ id: "r1", name: "HR" });
   prismaMock.application.findUnique.mockResolvedValue({ id: "a1", name: "Finance" });
+  mockLiveCallerFromSession(authMock, prismaMock.user.findUnique);
 });
 
 it("403s for a non-Admin", async () => {

@@ -48,7 +48,8 @@ Then click **Download CSV**.
 
 **7. Sign out (same two clicks as step 4). Sign in as the Employee you just created.**
 Land on their dashboard — only the one app tile shows.
-> "This is the payoff of the Access Matrix — they see exactly what their Role grants, nothing else, and it's enforced server-side, not just hidden in the UI."
+> "This is the payoff of the Access Matrix — they see exactly what their Role grants, nothing else."
+Known gap, say it if asked directly: today the matrix only governs which tiles render on this dashboard — it is not yet checked by the Finance App itself, so don't claim cross-app enforcement here. That's the top item in `docs/plan.md`.
 
 **8. Click the Finance App tile — it opens on port 3001. No login prompt.**
 This is the moment. Let it land, then read the page: it names the identity provider, its own separate session cookie, and the Portal → Keycloak → Finance App path.
@@ -60,11 +61,11 @@ If someone asks why it needed a separate cookie name: both apps are `localhost`,
 
 ## If they ask
 
-- **"Isn't this just a login page?"** — No: it's an identity provider (Keycloak) shared across two apps, a three-tier permission model, a Role-based access matrix enforced on every API route (not just hidden UI), and a full audit trail. The login screen is the smallest part of it.
+- **"Isn't this just a login page?"** — No: it's an identity provider (Keycloak) shared across two apps, a three-tier permission model enforced on every API route (not just hidden UI), a Role-based access matrix, and a full audit trail. The login screen is the smallest part of it.
 - **"What's actually hard about this?"** — Getting SSO to work across two apps (shared session, distinct cookies, federated logout closing both sessions), and making sure authorization can't be bypassed by hitting an API route directly instead of clicking through the UI — every route checks the caller's permissions itself.
 - **"Is it tested?"** — 78 automated tests over every API route and the security-relevant logic (`npm test`), plus this was just walked through live.
 - **"Does anyone actually pay for this?" / "Is this a real problem?"** — Yes. WorkOS is a company built entirely on enterprise identity; customers include OpenAI, Cursor, and Perplexity, and enterprises pay roughly $125/month *per SSO connection*. Then draw the distinction, because it's the sharper answer: *"WorkOS solves the vendor side — helping a SaaS product accept an enterprise's existing identity system. We built the enterprise side — one organization governing which employees reach which internal apps. Same domain, opposite direction. Ours is closer to identity governance (IGA) than to B2B auth infrastructure."*
-- **"What's missing / what would you do next?"** — Lead with SCIM/directory sync: auto-deprovisioning when an employee leaves, instead of an Admin remembering to delete the account. Naming the real gap unprompted lands better than claiming the project is finished. Full list in `docs/plan.md`.
+- **"What's missing / what would you do next?"** — Lead with the two real gaps: the Access Matrix doesn't yet gate the Finance App itself (only what renders here), and there's no revocation — a deleted or demoted user keeps their session until it expires. Both are already scoped as the next work, ahead of anything cosmetic. SCIM/directory sync is next after that. Naming the real gaps unprompted lands better than claiming the project is finished. Full list in `docs/plan.md`.
 
 ## If something breaks mid-demo
 

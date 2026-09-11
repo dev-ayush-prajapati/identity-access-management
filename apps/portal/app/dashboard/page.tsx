@@ -16,7 +16,21 @@ export const dynamic = "force-dynamic";
 
 export default async function DashboardPage() {
   const session = await auth();
-  const roleId = session?.user.roleId ?? null;
+
+  // Read live from Postgres rather than trusting the session's roleId: the
+  // session JWT is only refreshed at login, so an Admin reassigning this
+  // Employee's role must show up here on the very next page load, not the
+  // Employee's next login. A disabled account (status flips after the token
+  // was already issued) is treated the same as "no role" — no apps, not a
+  // crash — since middleware can't see Postgres state to block the page
+  // itself.
+  const currentUser = session?.user
+    ? await prisma.user.findUnique({
+        where: { id: session.user.id },
+        select: { roleId: true, status: true },
+      })
+    : null;
+  const roleId = currentUser?.status === "ACTIVE" ? currentUser.roleId : null;
 
   const applications = roleId
     ? await prisma.application.findMany({

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fakeSession } from "@/test/helpers";
+import { fakeSession, mockLiveCallerFromSession } from "@/test/helpers";
 
 const { authMock, prismaMock, logAuditMock } = vi.hoisted(() => ({
   authMock: vi.fn(),
@@ -7,6 +7,7 @@ const { authMock, prismaMock, logAuditMock } = vi.hoisted(() => ({
     auditLog: {
       findMany: vi.fn(),
     },
+    user: { findUnique: vi.fn() },
   },
   logAuditMock: vi.fn(),
 }));
@@ -39,6 +40,7 @@ const LOGS = [
 beforeEach(() => {
   vi.clearAllMocks();
   prismaMock.auditLog.findMany.mockResolvedValue(LOGS);
+  mockLiveCallerFromSession(authMock, prismaMock.user.findUnique);
 });
 
 describe("GET /api/audit-log/export", () => {

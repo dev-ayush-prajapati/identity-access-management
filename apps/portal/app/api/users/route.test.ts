@@ -4,6 +4,7 @@ import { fakeSession, jsonRequest } from "@/test/helpers";
 const {
   authMock,
   prismaMock,
+  userLookupMock,
   logAuditMock,
   createKeycloakUserMock,
   generateTempPasswordMock,
@@ -13,6 +14,13 @@ const {
     user: { findMany: vi.fn(), findUnique: vi.fn(), create: vi.fn() },
     role: { findUnique: vi.fn() },
   },
+  // `prisma.user.findUnique` serves two different callers here:
+  // `requireUserType`'s own live-status check (keyed by the caller's session
+  // id) and this route's duplicate-email check (keyed by email). The mock
+  // below dispatches on which one a given call is; the duplicate-email
+  // behavior is configured through this stand-in instead of
+  // `prismaMock.user.findUnique` directly.
+  userLookupMock: vi.fn(),
   logAuditMock: vi.fn(),
   createKeycloakUserMock: vi.fn(),
   generateTempPasswordMock: vi.fn(),
@@ -34,6 +42,13 @@ beforeEach(() => {
   vi.clearAllMocks();
   generateTempPasswordMock.mockReturnValue("temp-pw-123");
   prismaMock.user.findMany.mockResolvedValue([]);
+  prismaMock.user.findUnique.mockImplementation(async (args: { where: { id?: string; email?: string } }) => {
+    const session = await authMock();
+    if (session?.user && args.where.id === session.user.id) {
+      return { userType: session.user.userType, roleId: session.user.roleId, status: "ACTIVE" };
+    }
+    return userLookupMock(args);
+  });
 });
 
 describe("GET /api/users — tier is derived from the caller, never a param", () => {
@@ -89,7 +104,7 @@ describe("POST /api/users", () => {
 
   it("409s on a duplicate email without ever contacting Keycloak", async () => {
     authMock.mockResolvedValue(fakeSession({ userType: "SUPERADMIN" }));
-    prismaMock.user.findUnique.mockResolvedValue({ id: "existing" });
+    userLookupMock.mockResolvedValue({ id: "existing" });
 
     const res = await POST(jsonRequest(URL_, "POST", { name: "Bob", email: "bob@x.com" }));
 
@@ -99,7 +114,7 @@ describe("POST /api/users", () => {
 
   it("502s when Keycloak account creation fails, and never creates the Postgres row", async () => {
     authMock.mockResolvedValue(fakeSession({ userType: "SUPERADMIN" }));
-    prismaMock.user.findUnique.mockResolvedValue(null);
+    userLookupMock.mockResolvedValue(null);
     createKeycloakUserMock.mockRejectedValue(new Error("Keycloak down"));
 
     const res = await POST(jsonRequest(URL_, "POST", { name: "Bob", email: "bob@x.com" }));
@@ -110,7 +125,7 @@ describe("POST /api/users", () => {
 
   it("a SuperAdmin can only ever create Admins, even if the request body claims otherwise", async () => {
     authMock.mockResolvedValue(fakeSession({ userType: "SUPERADMIN", id: "boss-1" }));
-    prismaMock.user.findUnique.mockResolvedValue(null);
+    userLookupMock.mockResolvedValue(null);
     prismaMock.role.findUnique.mockResolvedValue({ id: "r9", name: "Whatever" });
     createKeycloakUserMock.mockResolvedValue("kc-123");
     prismaMock.user.create.mockResolvedValue({ id: "u1", email: "bob@x.com" });
@@ -141,7 +156,7 @@ describe("POST /api/users", () => {
   it("an Admin creates an Employee with the given role", async () => {
     authMock.mockResolvedValue(fakeSession({ userType: "ADMIN", id: "admin-1" }));
     prismaMock.role.findUnique.mockResolvedValue({ id: "r1", name: "HR" });
-    prismaMock.user.findUnique.mockResolvedValue(null);
+    userLookupMock.mockResolvedValue(null);
     createKeycloakUserMock.mockResolvedValue("kc-456");
     prismaMock.user.create.mockResolvedValue({ id: "u2", email: "amy@x.com" });
 
