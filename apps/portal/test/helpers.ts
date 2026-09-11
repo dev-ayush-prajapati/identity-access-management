@@ -21,10 +21,15 @@ export function fakeSession(overrides: {
   } as Session;
 }
 
-export function jsonRequest(url: string, method: string, body?: unknown): NextRequest {
+export function jsonRequest(
+  url: string,
+  method: string,
+  body?: unknown,
+  headers?: Record<string, string>
+): NextRequest {
   return new NextRequest(url, {
     method,
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...headers },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
 }
