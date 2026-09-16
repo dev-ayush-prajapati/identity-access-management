@@ -26,7 +26,7 @@ below.
 |---|---|---|
 | 0 | Doc honesty + CI | ✅ Done, merged to `main` (PR #13) |
 | 1 | Revocation | ✅ Done, merged to `main` (PR #13), verified live in browser |
-| 2 | Real enforcement | 🔧 Built, gate-verified; all four decision paths proven end-to-end with real sessions. The 404 was dev-server port drift, now fixed — **still needs one browser click-through** |
+| 2 | Real enforcement | ✅ Done, verified live in browser. The 404 was dev-server port drift, now fixed |
 | 3 | Joiner / mover / leaver | ⬜ Not started |
 | 4 | Audit log that deserves the name | ⬜ Not started |
 | 5 | Keycloak done properly | ⬜ Not started |
@@ -90,7 +90,7 @@ Employee's role, had no effect until their next login.
   as success. Fixed by calling `./node_modules/.bin/prisma` directly; CI does
   the same.
 
-## Phase 2 — Real enforcement 🔧 (built, not yet confirmed)
+## Phase 2 — Real enforcement ✅
 
 **Branch:** `feat/authz-enforcement` (cut from `main` after the Phase 0/1 PR
 merged).
@@ -169,13 +169,24 @@ reported 404.
 
 Fixed: `dev` is now `next dev -p 3000` / `next dev -p 3001`.
 
-**Still outstanding:** nobody has re-run the actual browser click-through since
-the port fix. The four cases above cover the same code path the browser takes,
-but per this file's ground rule that is "proven by test", not "proven live" —
-so Phase 2 stays 🔧 until someone clicks it. That retest should start from a
-fresh sign-in, not a refresh: a finance-app cookie minted before Phase 2 lacks
-the `keycloakId` claim `middleware.ts` reads, and middleware deliberately lets
-such a session through to the page rather than denying it.
+**Verified live in the browser after the port fix (2026-09-16),** from a fresh
+incognito sign-in (not a refresh — a finance-app cookie minted before Phase 2
+lacks the `keycloakId` claim `middleware.ts` reads, and middleware deliberately
+lets such a session through to the page rather than denying it):
+
+- **Allow path** — signed in at the portal as an HR Employee, clicked the
+  Finance App tile: landed on finance-app's "You're already signed in" page with
+  no password prompt. This is the exact navigation that produced the 404.
+- **Revoke, live** — with that session still open, an Admin in a separate
+  browser profile unticked HR × Finance App in the Access Matrix. The employee's
+  next refresh of `localhost:3001` rendered `/access-denied` ("Your role no
+  longer grants access to this application"). No re-login, no waiting for token
+  expiry. That refresh was also a direct URL hit, so it doubles as proof the
+  gate is the middleware and not a hidden tile.
+
+Two browser profiles are needed for that second test — the two apps share one
+Keycloak SSO session, so signing in as Admin in the same window would replace
+the Employee's session. Incognito for one, a normal window for the other.
 
 Two false leads, recorded so they aren't chased again: a hand-minted session
 cookie that failed to decrypt (a mistake in the mint, not in the app), and a
