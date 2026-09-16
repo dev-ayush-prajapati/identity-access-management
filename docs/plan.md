@@ -25,16 +25,7 @@ A full audit on 2026-09-11 (see `docs/session-log.md`) found the RBAC/audit stor
 
 Decided: reopen the data model where needed (adding a `Permission` entity is in scope), prioritize making the system's existing claims true over adding new features. This demotes MFA/session-visibility/approval-workflow below — they're real, but they decorate a gate that doesn't exist yet.
 
-Phases, in order (each is its own chunk of work, own tests, own gate run):
-
-0. ✅ **Doc honesty + CI** — done. Fixed the false claims in `demo-script.md`, reconciled doc drift, added `.github/workflows/ci.yml` (lint/typecheck/test/build for both apps on push — uses `./node_modules/.bin/prisma generate`, not `npx prisma`, see the Phase 1 tooling note below).
-1. ✅ **Revocation** — done. `requireUserType` (`lib/api-auth.ts`) now re-reads `userType`/`roleId`/`status` from Postgres on every call instead of trusting the session JWT (only refreshed at login); `/dashboard` reads `roleId` the same way. Added `User.status` (ACTIVE/DISABLED, migration `20260911181800_add_user_status_and_indexes`, which also added the 4 missing indexes from finding 12). `signIn` rejects a disabled user at login too. Skipped `tokenVersion` and shortening `session.maxAge` — the direct-DB-read approach makes both redundant, so adding them would be pure extra surface for no correctness gain. 83 tests passing (was 78). Full detail and a real tooling gotcha (`npx prisma` grabbing an incompatible 8.x instead of the pinned 7.x) in `docs/session-log.md`, 2026-09-11.
-2. **Real enforcement** — a `POST /api/authz/check` policy-decision endpoint in the portal; `finance-app` gains a `signIn` callback that calls it instead of accepting any Keycloak session. This is what makes the Access Matrix actually gate something outside the portal.
-3. **Joiner/mover/leaver** — disable/enable instead of hard delete, promote/demote with last-SuperAdmin and self-demote guards, forced password reset trigger. `AuditLog.userId` stops going `SET NULL` on delete.
-4. **Audit log that deserves the name** — structured fields (`targetType`/`targetId`/`metadata`/`outcome`), real `LOGIN_SUCCESS`/`LOGIN_DENIED`/`LOGOUT`/`ACCESS_DENIED` events (today there are zero auth events logged despite the log claiming to cover logins), server-side pagination past the current 100-row cap.
-5. **Keycloak done properly** — replace the master-realm admin password grant (`lib/keycloak-admin.ts`) with a realm-scoped service-account client; then the realm-hardening items in B.2/B.3 below, plus token/session lifespans.
-6. **Integrity + UI correctness** — FKs changed to match the documented 409-block behavior (today `User.roleId`/`RoleAccess` silently `SET NULL`/`CASCADE`, contradicting `CLAUDE.md`); fix the missing `catch` in every manager's optimistic `fetch` (a network failure today shows a grant as succeeded when nothing was written).
-7. **Presentation honesty** — resolve the `/sign-in` page vs middleware inconsistency (middleware bypasses it entirely), decide what to do with the landing page's hardcoded "activity feed"/stats now that Phase 4 makes some of it capable of being real.
+**Full phase-by-phase tracker (status, what shipped, what's still open): `docs/rebuild-plan.md`.** Keep that file current instead of duplicating phase detail here — this section is just the pointer and the decision record above.
 
 ## Next candidates (deprioritized until the rebuild above lands)
 

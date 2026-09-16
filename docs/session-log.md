@@ -26,31 +26,47 @@ only records *what happened, when, and why* — session by session.
 ## Current Status
 
 Mid rebuild of the authorization core. Sem3 feature set (all 7 roadmap steps in
-`planning-notes.md`) is complete and demoed; the UI/UX pass on `feat/sem3-ui-pass`
-is done but unmerged. Working through an 8-phase plan (Phase 0-7, see 2026-09-11
-entries below) to close the gap between what the Access Matrix/audit log/RBAC
-*claim* to do and what they actually enforce.
+`planning-notes.md`) is complete and demoed; `feat/sem3-ui-pass` (the UI/UX pass
+plus Phase 0 and Phase 1 of this rebuild) was reviewed and merged to `main` via
+PR #13 on 2026-09-11. Working through an 8-phase plan (Phase 0-7, see the
+2026-09-11 and 2026-09-12 entries below) to close the gap between what the
+Access Matrix/audit log/RBAC *claim* to do and what they actually enforce.
 
-- **Phase 0 (doc honesty + CI) — done.**
-- **Phase 1 (revocation) — done.** `requireUserType` and `/dashboard` now read
-  live status/userType/roleId from Postgres on every request instead of
-  trusting the session JWT.
-- Phases 2-7 not started.
+- **Phase 0 (doc honesty + CI) — done, merged to `main`.**
+- **Phase 1 (revocation) — done, merged to `main`.** `requireUserType` and
+  `/dashboard` now read live status/userType/roleId from Postgres on every
+  request instead of trusting the session JWT. Verified live in browser by
+  the user: role change, disable, and delete all took effect immediately, no
+  re-login.
+- **Phase 2 (real enforcement) — done, on branch `feat/authz-enforcement`**
+  (cut from the updated `main` after the PR #13 merge). `finance-app` now
+  actually checks the Access Matrix instead of accepting any Keycloak session.
+- Phases 3-7 not started.
 
 ## Open Items
 
-- `feat/sem3-ui-pass` is 20 commits ahead of `main`, unmerged — merge decision
-  deferred until the Phase 0-7 rebuild lands, so it goes to `main` as one coherent
-  state rather than mid-rebuild.
-- `apps/finance-app` does not yet check the Access Matrix at all (Phase 2 closes
-  this) — `docs/demo-script.md` has been corrected to stop claiming otherwise in
-  the meantime.
-- No manual browser click-through yet of a live disable/demote/role-change
-  taking effect on an already-signed-in session — covered by automated tests at
-  the `requireUserType`/`/dashboard` level (see below), but not eyeballed in a
-  real browser this session. There is also no UI yet to actually disable a
-  user (Phase 3 adds it) — Phase 1 only wired the schema field and the checks
-  that respect it.
+- No manual browser click-through yet of Phase 2 (finance-app enforcement) —
+  the PDP endpoint itself was smoke-tested directly against the live dev
+  server and real seeded data (HR employee correctly denied `no_grant`,
+  Engineering employee correctly `allow`, wrong secret 401s, unknown
+  keycloakId `no_account` — all confirmed), but nobody has clicked through a
+  real Keycloak sign-in to `localhost:3001` and watched a live revoke lock
+  them out yet. `docs/demo-script.md` still needs a rewrite once that's
+  confirmed (Phase 7 was always going to do this, but it's worth doing now
+  that the claim is finally true rather than waiting).
+- Admins/SuperAdmins are now denied access to `finance-app` (or any future
+  gated app) entirely, same as `/dashboard` — they carry no Role, and the PDP
+  reuses that exact rule. Deliberate, not a bug, but worth surfacing since
+  nothing in `planning-notes.md`'s locked screens ever said an Admin
+  shouldn't be able to open Finance App; it's a new implication of enforcing
+  the existing model outside the portal, not something previously decided.
+- `apps/finance-app` still has no test suite (by design, per `CLAUDE.md`), so
+  `signIn`/`middleware.ts`'s wiring only has the shared `lib/authz-check.ts`
+  logic proven indirectly via the portal-side route tests plus the live
+  smoke test above — nothing exercises finance-app's own callback/middleware
+  code directly.
+- There is still no UI to actually disable a user (Phase 3 adds it) — Phase 1's
+  disable check was exercised live by editing `status` directly in Postgres.
 - `npx prisma` intermittently resolved a newer major version (8.0.0-rc.13, no
   `migrate` command under that name) instead of the pinned `^7.9.0` — hit this
   mid-session running the Phase 1 migration. Worked around by calling
@@ -60,6 +76,77 @@ entries below) to close the gap between what the Access Matrix/audit log/RBAC
   the problem.
 
 ## Session History
+
+### 2026-09-12 — PR #13 merged; Phase 2 (real enforcement) built
+
+`feat/sem3-ui-pass` (PR #13 — the whole UI/UX pass plus this rebuild's Phase 0
+and Phase 1) was reviewed and merged to `main` by the user. Before starting
+Phase 2, checked out `main`, pulled, and cut a fresh branch,
+`feat/authz-enforcement`, rather than continuing on the now-merged branch.
+
+User manually verified Phase 1 live in browser first, in three parts, each
+confirmed working:
+- **Role/access change** — Admin toggled a grant in the Access Matrix while
+  the affected Employee's `/dashboard` was already open in another browser;
+  refreshing (no re-login) showed the updated tiles immediately.
+- **Delete** — deleted a signed-in user from another account; their open
+  `/profile` tab then showed "Unable to load your profile" on refresh —
+  confirmed this is the existing, correct fallback for a missing user row
+  (`app/profile/page.tsx`), not a crash.
+- **Disable** — flipped a signed-in user's `status` to `DISABLED` directly in
+  Postgres (`docker exec ... psql`, hit real PowerShell quoting friction
+  getting a `"User"` identifier through as a single-shot `-c` argument;
+  landed on `docker exec -it ... psql` and pasting the SQL at the interactive
+  prompt instead, which sidesteps the quoting problem entirely); their open
+  `/dashboard` tab then correctly flipped to "No role assigned yet" on
+  refresh.
+
+Then built Phase 2 in full:
+
+- **Portal** — new `app/api/authz/check/route.ts`, the policy decision point.
+  Takes `{keycloakId, origin, trigger}`, authenticates the caller via a
+  shared secret (`AUTHZ_SERVICE_SECRET`, `crypto.timingSafeEqual`, fails
+  closed with 500 if unset rather than defaulting to allow), looks up the
+  `Application` registered at `origin` (matched by URL, not the
+  admin-editable display name), then the caller's live `status`/`userType`/
+  `roleId`/`RoleAccess` — same rule `/dashboard` already uses, so
+  Admins/SuperAdmins (no Role) are denied same as Employees with no grant.
+  Widened `lib/audit.ts`'s `logAudit` to accept a `null` userId, for a denial
+  where there's no matching portal account at all to attribute it to.
+  16 new tests (99 total).
+- **finance-app** — `auth.ts` gained `signIn`/`jwt`/`session` callbacks:
+  `signIn` asks the portal once at login (`trigger: "signIn"`, so a denial
+  there gets audit-logged on the portal side); `jwt`/`session` carry the
+  Keycloak `keycloakId` into the session so later checks don't need the
+  original OAuth profile. New `middleware.ts` re-asks on *every* request to
+  `/` (`trigger: "revalidate"`, deliberately not audit-logged — every page
+  view would flood the log for a state that hasn't changed) and redirects a
+  now-denied session to a new `/access-denied` page. Shared fetch logic in
+  new `lib/authz-check.ts`, fails closed on any network error. New
+  `types/next-auth.d.ts` for the `keycloakId` session field, mirroring the
+  portal's own module-augmentation pattern.
+  - Hit the exact same Auth.js v5 typing gap the portal's `auth.config.ts`
+    hit originally (`token` in the `session` callback doesn't pick up the
+    `next-auth/jwt` augmentation, types as `{}`) — same fix, an explicit cast.
+- Added `AUTHZ_SERVICE_SECRET` to both apps' `.env`/`.env.example`.
+- Full gate green on both apps: portal (lint, `tsc --noEmit`, 99 tests,
+  build), finance-app (lint, `tsc --noEmit`, build — no test suite, by
+  design).
+- Live smoke test of the PDP directly against the running dev server and
+  real seeded data (curl, real `keycloakId`s pulled from Postgres): HR
+  employee (no Finance grant) → `{allow:false, reason:"no_grant"}`;
+  Engineering employee (has the grant) → `{allow:true, reason:"allow"}`;
+  wrong secret → 401; unknown `keycloakId` → `no_account`. All correct.
+  Also confirmed a stray second `npm run dev` accidentally started during
+  this exited cleanly on its own (Next.js's own dev-server singleton lock)
+  rather than actually binding port 3001 alongside finance-app.
+
+Not yet done: an actual browser click-through of finance-app itself — sign in
+as an Employee with the grant (expect straight through), one without (expect
+`/access-denied` at first request), then revoke a live grant mid-session and
+confirm the next page load locks them out without re-login. `demo-script.md`
+also hasn't been rewritten yet to reflect that the Access Matrix claim is now
+actually true — worth doing once the browser click-through above confirms it.
 
 ### 2026-09-11 — Full audit + 8-phase rebuild plan
 
