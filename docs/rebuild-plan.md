@@ -27,7 +27,7 @@ below.
 | 0 | Doc honesty + CI | ✅ Done, merged to `main` (PR #13) |
 | 1 | Revocation | ✅ Done, merged to `main` (PR #13), verified live in browser |
 | 2 | Real enforcement | ✅ Done, verified live in browser. The 404 was dev-server port drift, now fixed |
-| 3 | Joiner / mover / leaver | 🟡 Built, gate-verified — pending live browser click-through |
+| 3 | Joiner / mover / leaver | ✅ Done, verified live in browser |
 | 4 | Audit log that deserves the name | ⬜ Not started |
 | 5 | Keycloak done properly | ⬜ Not started |
 | 6 | Integrity + UI correctness | ⬜ Not started |
@@ -193,11 +193,41 @@ cookie that failed to decrypt (a mistake in the mint, not in the app), and a
 debug route that 404'd because its folder was named `__debug` — Next treats
 `_`-prefixed folders as private and excludes them from routing.
 
-## Phase 3 — Joiner / mover / leaver 🟡
+## Phase 3 — Joiner / mover / leaver ✅
 
 **Branch:** `feat/joiner-mover-leaver` (cut from `main` after the Phase 2 PR
-merged). Built and gate-verified (lint, `tsc --noEmit`, 124 tests, build, all
-green); not yet clicked through live in a browser — see the ground rule above.
+merged). Gate green (lint, `tsc --noEmit`, 124 tests, build).
+
+**Verified live in the browser (2026-09-20), against the seeded demo data,
+each check confirmed at the Postgres/Keycloak level too, not just the UI:**
+
+- **Disable/enable** — disabled a seeded Employee (Neha Joshi) from the
+  Admin's dropdown; Keycloak's own login screen then rejected her outright
+  ("Account is disabled, contact your administrator") — not just the app
+  turning her away, the login step itself. Re-enabled → same login succeeded,
+  dashboard restored.
+- **Promote** — created a disposable Admin ("QA Temp"), promoted it to
+  SuperAdmin; it disappeared from the Admins list immediately and Postgres
+  confirmed `userType: SUPERADMIN`.
+- **Forced password reset** — reset a seeded Employee's password, confirmed
+  the new one-time dialog copy ("Password reset", not "created"), logged in
+  with the new password and hit Keycloak's forced-update-password screen.
+- **Delete → archive** — deleted a test Employee (`ayush@demo.com`); Keycloak
+  admin console confirmed the account fully gone, while Postgres still had
+  the row with `archivedAt` set and `status: DISABLED`. The `AuditLog`'s
+  `EMPLOYEE_ARCHIVED` entry correctly showed `actorName`/`actorEmail` for the
+  Admin who did it. Re-adding the same email correctly 409'd — confirmed the
+  known email-reuse limitation is exactly that, not a crash.
+- **Compensating rollback** — not manually triggerable (needs the Postgres
+  write to fail in the instant after the Keycloak account succeeds); proven
+  by the automated test instead (`users/route.test.ts`, "rolls back the
+  Keycloak account when the Postgres create fails").
+- Along the way, found the Access Matrix had zero grants for any Role
+  (leftover from earlier manual Phase 2 testing, unrelated to this phase) —
+  every Employee dashboard was showing empty regardless of anything here.
+  Fixed by re-running `scripts/seed-demo.ts` (idempotent — skipped everything
+  that already existed, only restored the 11 missing grants and one missing
+  seeded Admin).
 
 **What shipped:**
 
