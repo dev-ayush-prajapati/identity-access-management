@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireUserType } from "@/lib/api-auth";
 import { logAudit } from "@/lib/audit";
-import { deleteKeycloakUser } from "@/lib/keycloak-admin";
+import { deleteKeycloakUser, setKeycloakUserEnabled } from "@/lib/keycloak-admin";
 import type { UserType } from "@/lib/generated/prisma";
 
 function managedUserType(callerType: UserType): UserType {
@@ -18,11 +18,46 @@ export async function PATCH(
   const { id } = await params;
 
   const target = await prisma.user.findUnique({ where: { id } });
-  if (!target || target.userType !== managedUserType(session.user.userType)) {
+  if (!target || target.archivedAt || target.userType !== managedUserType(session.user.userType)) {
     return NextResponse.json({ error: "User not found" }, { status: 404 });
   }
 
   const body = await req.json();
+
+  // Enable/disable is a distinct action from the name/role edit below (the
+  // UI fires it from its own dropdown item, never mixed with the edit form),
+  // so it's handled as its own branch rather than folded into the same
+  // update call.
+  if ("status" in body) {
+    const status = body.status;
+    if (status !== "ACTIVE" && status !== "DISABLED") {
+      return NextResponse.json({ error: "status must be ACTIVE or DISABLED" }, { status: 400 });
+    }
+
+    try {
+      await setKeycloakUserEnabled(target.keycloakId, status === "ACTIVE");
+    } catch (err) {
+      return NextResponse.json(
+        { error: err instanceof Error ? err.message : "Failed to update Keycloak account" },
+        { status: 502 }
+      );
+    }
+
+    const user = await prisma.user.update({
+      where: { id },
+      data: { status },
+      include: { role: true },
+    });
+
+    await logAudit(
+      session.user.id,
+      status === "ACTIVE" ? `${target.userType}_ENABLED` : `${target.userType}_DISABLED`,
+      `${status === "ACTIVE" ? "Enabled" : "Disabled"} ${target.userType.toLowerCase()} "${target.name}"`
+    );
+
+    return NextResponse.json(user);
+  }
+
   const name = typeof body.name === "string" ? body.name.trim() : "";
   if (!name) {
     return NextResponse.json({ error: "name is required" }, { status: 400 });
@@ -61,7 +96,7 @@ export async function DELETE(
   const { id } = await params;
 
   const target = await prisma.user.findUnique({ where: { id } });
-  if (!target || target.userType !== managedUserType(session.user.userType)) {
+  if (!target || target.archivedAt || target.userType !== managedUserType(session.user.userType)) {
     return NextResponse.json({ error: "User not found" }, { status: 404 });
   }
 
@@ -74,9 +109,17 @@ export async function DELETE(
     );
   }
 
-  await prisma.user.delete({ where: { id } });
+  // Archive, not delete: the Keycloak login above is gone for good (they can
+  // never sign in again), but the Postgres row is kept — disabled and
+  // stripped from every user-management list — so historical AuditLog rows
+  // that reference this id keep resolving instead of dangling.
+  await prisma.user.update({ where: { id }, data: { archivedAt: new Date(), status: "DISABLED" } });
 
-  await logAudit(session.user.id, `${target.userType}_DELETED`, `Deleted ${target.userType.toLowerCase()} "${target.name}" (${target.email})`);
+  await logAudit(
+    session.user.id,
+    `${target.userType}_ARCHIVED`,
+    `Archived ${target.userType.toLowerCase()} "${target.name}" (${target.email}) — Keycloak login removed, portal record kept for audit history`
+  );
 
   return NextResponse.json({ success: true });
 }

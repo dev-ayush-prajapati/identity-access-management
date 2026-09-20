@@ -65,38 +65,46 @@ export function AuditLogTable({ logs, limit, showFooter = true }: AuditLogTableP
             </TableRow>
           </TableHeader>
           <TableBody className="stagger">
-            {logs.map((log) => (
-              <TableRow key={log.id} className="animate-fade-in">
-                <TableCell>
-                  <div className="flex items-center gap-3">
-                    <span
-                      aria-hidden
-                      className="flex size-8 shrink-0 items-center justify-center rounded-full bg-muted font-mono text-[0.65rem] font-medium text-muted-foreground"
-                    >
-                      {log.user ? initialsOf(log.user.name) : "SY"}
-                    </span>
-                    <span className="flex flex-col leading-tight">
-                      <span className="font-medium">{log.user?.name ?? "System"}</span>
-                      <span className="text-xs text-muted-foreground">
-                        {log.user?.email ?? "No linked account"}
+            {logs.map((log) => {
+              // Prefer the snapshot taken at write time — it survives a
+              // later rename or (belt-and-suspenders) a missing relation —
+              // falling back to the live join for older rows written before
+              // the snapshot columns existed.
+              const actorName = log.actorName ?? log.user?.name ?? null;
+              const actorEmail = log.actorEmail ?? log.user?.email ?? null;
+              return (
+                <TableRow key={log.id} className="animate-fade-in">
+                  <TableCell>
+                    <div className="flex items-center gap-3">
+                      <span
+                        aria-hidden
+                        className="flex size-8 shrink-0 items-center justify-center rounded-full bg-muted font-mono text-[0.65rem] font-medium text-muted-foreground"
+                      >
+                        {actorName ? initialsOf(actorName) : "SY"}
                       </span>
-                    </span>
-                  </div>
-                </TableCell>
-                <TableCell>
-                  <ActionBadge action={log.action} />
-                </TableCell>
-                <TableCell
-                  className="max-w-md truncate text-muted-foreground"
-                  title={log.details ?? undefined}
-                >
-                  {log.details ?? "—"}
-                </TableCell>
-                <TableCell className="text-right text-muted-foreground">
-                  <RelativeTime date={log.createdAt} />
-                </TableCell>
-              </TableRow>
-            ))}
+                      <span className="flex flex-col leading-tight">
+                        <span className="font-medium">{actorName ?? "System"}</span>
+                        <span className="text-xs text-muted-foreground">
+                          {actorEmail ?? "No linked account"}
+                        </span>
+                      </span>
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <ActionBadge action={log.action} />
+                  </TableCell>
+                  <TableCell
+                    className="max-w-md truncate text-muted-foreground"
+                    title={log.details ?? undefined}
+                  >
+                    {log.details ?? "—"}
+                  </TableCell>
+                  <TableCell className="text-right text-muted-foreground">
+                    <RelativeTime date={log.createdAt} />
+                  </TableCell>
+                </TableRow>
+              );
+            })}
           </TableBody>
         </Table>
       </div>

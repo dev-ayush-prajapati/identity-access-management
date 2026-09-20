@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import { toast } from "sonner";
-import { MoreHorizontal, UserCog, Users } from "lucide-react";
+import { ArrowUpCircle, KeyRound, MoreHorizontal, Power, UserCog, Users } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import GradientButton from "@/components/kokonutui/gradient-button";
 import { ConfirmDialog } from "@/components/common/confirm-dialog";
@@ -36,6 +37,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import type { Role, User, UserType } from "@/lib/generated/prisma";
@@ -52,20 +54,24 @@ type FormState = { name: string; email: string; roleId: string };
 
 const EMPTY_FORM: FormState = { name: "", email: "", roleId: "" };
 
+// One "here's a password" dialog, reused for both creation and a forced
+// reset — same shape, different opening line.
+type TempCredentials = { email: string; password: string; reason: "created" | "reset" };
+
+type PendingAction = { type: "delete" | "disable" | "promote"; user: UserWithRole };
+
 export function UsersManager({ initialUsers, targetUserType, roles = [] }: UsersManagerProps) {
   const [users, setUsers] = useState(initialUsers);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [submitting, setSubmitting] = useState(false);
-  const [tempCredentials, setTempCredentials] = useState<{ email: string; password: string } | null>(
-    null
-  );
+  const [tempCredentials, setTempCredentials] = useState<TempCredentials | null>(null);
   // Two pieces of state, not one nullable target: the dialog stays mounted
   // through its close animation, so clearing the target on close would blank
   // the name mid-fade.
   const [confirmOpen, setConfirmOpen] = useState(false);
-  const [deleteTarget, setDeleteTarget] = useState<UserWithRole | null>(null);
+  const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
 
   const label = targetUserType === "ADMIN" ? "Admin" : "Employee";
 
@@ -125,7 +131,7 @@ export function UsersManager({ initialUsers, targetUserType, roles = [] }: Users
       } else {
         const { tempPassword, ...user } = data;
         setUsers((prev) => [...prev, user]);
-        setTempCredentials({ email: user.email, password: tempPassword });
+        setTempCredentials({ email: user.email, password: tempPassword, reason: "created" });
       }
       setDialogOpen(false);
     } finally {
@@ -133,14 +139,75 @@ export function UsersManager({ initialUsers, targetUserType, roles = [] }: Users
     }
   }
 
-  function requestDelete(user: UserWithRole) {
-    setDeleteTarget(user);
+  async function handleResetPassword(user: UserWithRole) {
+    const res = await fetch(`/api/users/${user.id}/reset-password`, { method: "POST" });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      toast.error(data.error ?? "Failed to reset password");
+      return;
+    }
+    setTempCredentials({ email: user.email, password: data.tempPassword, reason: "reset" });
+  }
+
+  // Shared by both directions: enabling fires this straight from the
+  // dropdown, disabling fires it as the ConfirmDialog's onConfirm — which is
+  // why it resolves on success and throws on failure (that's how
+  // ConfirmDialog knows whether to close).
+  async function performStatusChange(user: UserWithRole, status: "ACTIVE" | "DISABLED") {
+    const res = await fetch(`/api/users/${user.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      toast.error(data.error ?? "Failed to update status");
+      throw new Error(data.error ?? "Failed to update status");
+    }
+    setUsers((prev) => prev.map((u) => (u.id === user.id ? data : u)));
+    toast.success(status === "ACTIVE" ? `${label} enabled` : `${label} disabled`);
+  }
+
+  function handleEnable(user: UserWithRole) {
+    performStatusChange(user, "ACTIVE").catch(() => {
+      // Already toasted above; nothing else needs this rejection.
+    });
+  }
+
+  async function performPromote(user: UserWithRole) {
+    const res = await fetch(`/api/users/${user.id}/user-type`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userType: "SUPERADMIN" }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      toast.error(data.error ?? "Failed to promote");
+      throw new Error(data.error ?? "Failed to promote");
+    }
+    // A promoted Admin is a SuperAdmin now — it no longer belongs in this
+    // (Admins-only) list, so it's removed rather than updated in place.
+    setUsers((prev) => prev.filter((u) => u.id !== user.id));
+    toast.success(`${user.name} promoted to SuperAdmin`);
+  }
+
+  function requestConfirm(type: PendingAction["type"], user: UserWithRole) {
+    setPendingAction({ type, user });
     setConfirmOpen(true);
   }
 
-  async function handleDelete() {
-    if (!deleteTarget) return;
-    const user = deleteTarget;
+  async function handleConfirm() {
+    if (!pendingAction) return;
+    const { type, user } = pendingAction;
+
+    if (type === "disable") {
+      await performStatusChange(user, "DISABLED");
+      return;
+    }
+    if (type === "promote") {
+      await performPromote(user);
+      return;
+    }
 
     const res = await fetch(`/api/users/${user.id}`, { method: "DELETE" });
     const data = await res.json().catch(() => ({}));
@@ -153,6 +220,36 @@ export function UsersManager({ initialUsers, targetUserType, roles = [] }: Users
     setUsers((prev) => prev.filter((u) => u.id !== user.id));
     toast.success(`${label} deleted`);
   }
+
+  const confirmCopy = (() => {
+    if (!pendingAction) return null;
+    const { type, user } = pendingAction;
+    if (type === "delete") {
+      return {
+        title: `Delete this ${label.toLowerCase()}?`,
+        description: `${user.name} loses their Keycloak login for good and can't sign in anywhere again. Their portal record is kept (not removed) so past audit log entries stay attributable. This can't be undone.`,
+        confirmLabel: `Delete ${label.toLowerCase()}`,
+        pendingLabel: "Deleting...",
+        destructive: true,
+      };
+    }
+    if (type === "disable") {
+      return {
+        title: `Disable ${user.name}?`,
+        description: `${user.name} is signed out of every app on their next request and can't sign back in until re-enabled. Their account and history stay intact — this can be reversed.`,
+        confirmLabel: "Disable",
+        pendingLabel: "Disabling...",
+        destructive: true,
+      };
+    }
+    return {
+      title: `Promote ${user.name} to SuperAdmin?`,
+      description: `${user.name} gains full SuperAdmin powers — managing Admins and the Application catalog — and leaves this Admins list. This isn't reversible from here (a SuperAdmin would need to demote them back).`,
+      confirmLabel: "Promote",
+      pendingLabel: "Promoting...",
+      destructive: false,
+    };
+  })();
 
   return (
     <div className="space-y-4">
@@ -180,6 +277,7 @@ export function UsersManager({ initialUsers, targetUserType, roles = [] }: Users
                 <TableHead>Name</TableHead>
                 <TableHead>Email</TableHead>
                 {targetUserType === "EMPLOYEE" && <TableHead>Role</TableHead>}
+                <TableHead>Status</TableHead>
                 <TableHead className="w-12" />
               </TableRow>
             </TableHeader>
@@ -194,6 +292,11 @@ export function UsersManager({ initialUsers, targetUserType, roles = [] }: Users
                     </TableCell>
                   )}
                   <TableCell>
+                    <Badge variant={user.status === "ACTIVE" ? "outline" : "destructive"}>
+                      {user.status === "ACTIVE" ? "Active" : "Disabled"}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>
                     <DropdownMenu>
                       <DropdownMenuTrigger
                         render={
@@ -206,9 +309,31 @@ export function UsersManager({ initialUsers, targetUserType, roles = [] }: Users
                         <DropdownMenuItem onClick={() => openEditDialog(user)}>
                           Edit
                         </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => handleResetPassword(user)}>
+                          <KeyRound className="size-4" />
+                          Reset password
+                        </DropdownMenuItem>
+                        {user.status === "ACTIVE" ? (
+                          <DropdownMenuItem onClick={() => requestConfirm("disable", user)}>
+                            <Power className="size-4" />
+                            Disable
+                          </DropdownMenuItem>
+                        ) : (
+                          <DropdownMenuItem onClick={() => handleEnable(user)}>
+                            <Power className="size-4" />
+                            Enable
+                          </DropdownMenuItem>
+                        )}
+                        {targetUserType === "ADMIN" && (
+                          <DropdownMenuItem onClick={() => requestConfirm("promote", user)}>
+                            <ArrowUpCircle className="size-4" />
+                            Promote to SuperAdmin
+                          </DropdownMenuItem>
+                        )}
+                        <DropdownMenuSeparator />
                         <DropdownMenuItem
                           variant="destructive"
-                          onClick={() => requestDelete(user)}
+                          onClick={() => requestConfirm("delete", user)}
                         >
                           Delete
                         </DropdownMenuItem>
@@ -292,10 +417,11 @@ export function UsersManager({ initialUsers, targetUserType, roles = [] }: Users
       <Dialog open={!!tempCredentials} onOpenChange={(open) => !open && setTempCredentials(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{label} created</DialogTitle>
+            <DialogTitle>{tempCredentials?.reason === "reset" ? "Password reset" : `${label} created`}</DialogTitle>
             <DialogDescription>
               Share this temporary password with {tempCredentials?.email} — they&apos;ll be forced
-              to change it on first login. It won&apos;t be shown again.
+              to change it on {tempCredentials?.reason === "reset" ? "their next" : "first"} login.
+              It won&apos;t be shown again.
             </DialogDescription>
           </DialogHeader>
           <div className="rounded-md border bg-muted p-3 font-mono text-sm">
@@ -317,20 +443,18 @@ export function UsersManager({ initialUsers, targetUserType, roles = [] }: Users
         </DialogContent>
       </Dialog>
 
-      <ConfirmDialog
-        open={confirmOpen}
-        onOpenChange={setConfirmOpen}
-        title={`Delete this ${label.toLowerCase()}?`}
-        description={
-          deleteTarget
-            ? `${deleteTarget.name} loses their portal account and their Keycloak login, so they can no longer sign in anywhere. This can't be undone.`
-            : ""
-        }
-        confirmLabel={`Delete ${label.toLowerCase()}`}
-        pendingLabel="Deleting..."
-        destructive
-        onConfirm={handleDelete}
-      />
+      {confirmCopy && (
+        <ConfirmDialog
+          open={confirmOpen}
+          onOpenChange={setConfirmOpen}
+          title={confirmCopy.title}
+          description={confirmCopy.description}
+          confirmLabel={confirmCopy.confirmLabel}
+          pendingLabel={confirmCopy.pendingLabel}
+          destructive={confirmCopy.destructive}
+          onConfirm={handleConfirm}
+        />
+      )}
     </div>
   );
 }

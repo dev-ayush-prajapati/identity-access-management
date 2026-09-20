@@ -52,10 +52,14 @@ export function AuditLogExplorer({ logs, limit }: AuditLogExplorerProps) {
       if (filter !== "all" && categorizeAction(log.action) !== filter) return false;
       if (!needle) return true;
       // Every field the row displays is searchable, so what you can read is
-      // what you can search for.
-      return [log.user?.name, log.user?.email, log.action, log.details].some((field) =>
-        field?.toLowerCase().includes(needle)
-      );
+      // what you can search for. Prefer the write-time snapshot, same as the
+      // table itself.
+      return [
+        log.actorName ?? log.user?.name,
+        log.actorEmail ?? log.user?.email,
+        log.action,
+        log.details,
+      ].some((field) => field?.toLowerCase().includes(needle));
     });
   }, [logs, query, filter]);
 

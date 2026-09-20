@@ -27,7 +27,7 @@ below.
 | 0 | Doc honesty + CI | ✅ Done, merged to `main` (PR #13) |
 | 1 | Revocation | ✅ Done, merged to `main` (PR #13), verified live in browser |
 | 2 | Real enforcement | ✅ Done, verified live in browser. The 404 was dev-server port drift, now fixed |
-| 3 | Joiner / mover / leaver | ⬜ Not started |
+| 3 | Joiner / mover / leaver | ✅ Done, verified live in browser |
 | 4 | Audit log that deserves the name | ⬜ Not started |
 | 5 | Keycloak done properly | ⬜ Not started |
 | 6 | Integrity + UI correctness | ⬜ Not started |
@@ -193,16 +193,114 @@ cookie that failed to decrypt (a mistake in the mint, not in the app), and a
 debug route that 404'd because its folder was named `__debug` — Next treats
 `_`-prefixed folders as private and excludes them from routing.
 
-## Phase 3 — Joiner / mover / leaver ⬜
+## Phase 3 — Joiner / mover / leaver ✅
 
-Not started. Disable/enable a user (maps onto Keycloak's `enabled` flag, which
-`lib/keycloak-admin.ts` can already reach — Phase 1 added the schema field and
-the checks that respect it, but there's still no UI/API action to flip it).
-Promote/demote `userType`, with guards against demoting yourself and against
-removing the last SuperAdmin. Forced password-reset trigger. Delete becomes
-archive: `AuditLog.userId` stops going `SET NULL` on delete (denormalize actor
-name/email onto the audit row instead, so attribution survives regardless).
-Compensating action when a Keycloak-then-Postgres create fails partway.
+**Branch:** `feat/joiner-mover-leaver` (cut from `main` after the Phase 2 PR
+merged). Gate green (lint, `tsc --noEmit`, 124 tests, build).
+
+**Verified live in the browser (2026-09-20), against the seeded demo data,
+each check confirmed at the Postgres/Keycloak level too, not just the UI:**
+
+- **Disable/enable** — disabled a seeded Employee (Neha Joshi) from the
+  Admin's dropdown; Keycloak's own login screen then rejected her outright
+  ("Account is disabled, contact your administrator") — not just the app
+  turning her away, the login step itself. Re-enabled → same login succeeded,
+  dashboard restored.
+- **Promote** — created a disposable Admin ("QA Temp"), promoted it to
+  SuperAdmin; it disappeared from the Admins list immediately and Postgres
+  confirmed `userType: SUPERADMIN`.
+- **Forced password reset** — reset a seeded Employee's password, confirmed
+  the new one-time dialog copy ("Password reset", not "created"), logged in
+  with the new password and hit Keycloak's forced-update-password screen.
+- **Delete → archive** — deleted a test Employee (`ayush@demo.com`); Keycloak
+  admin console confirmed the account fully gone, while Postgres still had
+  the row with `archivedAt` set and `status: DISABLED`. The `AuditLog`'s
+  `EMPLOYEE_ARCHIVED` entry correctly showed `actorName`/`actorEmail` for the
+  Admin who did it. Re-adding the same email correctly 409'd — confirmed the
+  known email-reuse limitation is exactly that, not a crash.
+- **Compensating rollback** — not manually triggerable (needs the Postgres
+  write to fail in the instant after the Keycloak account succeeds); proven
+  by the automated test instead (`users/route.test.ts`, "rolls back the
+  Keycloak account when the Postgres create fails").
+- Along the way, found the Access Matrix had zero grants for any Role
+  (leftover from earlier manual Phase 2 testing, unrelated to this phase) —
+  every Employee dashboard was showing empty regardless of anything here.
+  Fixed by re-running `scripts/seed-demo.ts` (idempotent — skipped everything
+  that already existed, only restored the 11 missing grants and one missing
+  seeded Admin).
+
+**What shipped:**
+
+- **Disable/enable a user** — `PATCH /api/users/[id]` gained a `status`
+  branch (`{ status: "ACTIVE" | "DISABLED" }`), handled separately from the
+  name/role edit since the UI fires it from its own dropdown action. Calls
+  the new `setKeycloakUserEnabled()` (`lib/keycloak-admin.ts`, `PUT
+  /admin/realms/{realm}/users/{id}` with `{enabled}`) before touching
+  Postgres, fails closed (502, Postgres untouched) if Keycloak rejects it —
+  same ordering/fail-closed pattern as create and delete. Disabling in
+  Postgres alone was already enough to block every request (Phase 1's
+  `requireUserType` and Phase 2's `/api/authz/check` both read `status` live)
+  — this closes the matching gap on the Keycloak side, so a disabled
+  account's login screen itself is dead too, not just the app behind it.
+  `components/users/users-manager.tsx` adds a Status column and an
+  Enable/Disable dropdown action; disabling goes through `ConfirmDialog`
+  (kicks a live user out immediately), enabling doesn't (purely restorative).
+- **Promote/demote `userType`** — new `PATCH /api/users/[id]/user-type`
+  route, SuperAdmin-only, moves a target between `ADMIN` and `SUPERADMIN`.
+  Deliberately its own route rather than folded into the PATCH above: that
+  route's target lookup is scoped to "one tier below the caller"
+  (`managedUserType`), which by design can never match a SuperAdmin target.
+  Guards: 400 on self-targeting (`target.id === session.user.id`), 400 on
+  demoting the last remaining SuperAdmin (`count({userType: "SUPERADMIN",
+  archivedAt: null}) <= 1`), 404 if the target is an Employee (a different
+  kind of tier entirely — carries a Role, not part of this ladder).
+  **UI gap, tracked not hidden:** the Admins table gained a "Promote to
+  SuperAdmin" dropdown action (with a confirm dialog — not easily reversible
+  from that screen), but there's no screen listing existing SuperAdmins to
+  demote from, since `/superadmin` only ever lists Admins. The route and its
+  guards are fully built and tested either way; wiring a demote entry point
+  is deferred rather than building a new "manage SuperAdmins" screen just for
+  it this pass.
+- **Forced password-reset trigger** — new `POST
+  /api/users/[id]/reset-password`, same tier scoping as the other per-user
+  routes. Calls the new `resetKeycloakUserPassword()`
+  (`lib/keycloak-admin.ts`, `PUT .../reset-password` with
+  `{type:"password", value, temporary:true}`), returns the new temp password
+  once. UI reuses the existing "here's a password" dialog from user creation
+  (`components/users/users-manager.tsx`'s `tempCredentials` state gained a
+  `reason: "created" | "reset"` to pick the right opening line) rather than
+  building a second dialog for the same shape.
+- **Delete becomes archive** — `User` gained `archivedAt DateTime?`.
+  `DELETE /api/users/[id]` still deletes the Keycloak account outright (that
+  login is gone for good), but no longer calls `prisma.user.delete` — it sets
+  `archivedAt: now()` and `status: DISABLED` instead, so the row survives.
+  `GET /api/users` filters `archivedAt: null` so archived rows disappear from
+  every management list, and the PATCH/DELETE/reset-password/user-type
+  routes' own target lookups all treat an archived row as 404, same bucket as
+  "doesn't exist." `AuditLog.user`'s relation changed from the implicit
+  `SetNull`-on-delete an optional relation defaults to an explicit
+  `onDelete: Restrict` — since a User row is archived, never hard-deleted, in
+  normal operation this should never actually fire; it exists so a
+  hypothetical direct hard-delete fails loudly instead of silently orphaning
+  audit history. Separately, `AuditLog` also gained `actorName`/`actorEmail`,
+  snapshotted by `logAudit()` (`lib/audit.ts`) at write time from a fresh
+  Postgres lookup — belt-and-suspenders so a row stays attributable even if
+  an actor's name changes later or the relation itself is ever missing.
+  Migration `20260920064626_user_archive_and_audit_actor`.
+  **Known limitation, not fixed this pass:** email stays unique across
+  archived rows, so an archived user's email can't be reused for a new
+  account. No restore/reactivate flow exists either. Both are real gaps
+  worth a follow-up if they bite, not silently designed around here.
+- **Compensating action for a partial create** — `POST /api/users` now wraps
+  `prisma.user.create` in a try/catch: if it fails after the Keycloak account
+  already exists, it rolls that account back via `deleteKeycloakUser()`
+  rather than leaving an orphaned login with no matching portal row (if the
+  rollback itself fails, the orphaned `keycloakId` is logged for manual
+  cleanup, not silently swallowed) and returns 500.
+- Test suite: 9 new tests on the existing users routes (status toggle,
+  archived-target 404s, the create-rollback path), plus two new route test
+  files (`reset-password`, `user-type`) and a new `lib/audit.test.ts` for the
+  actor-snapshot behavior. 99 → 124 tests.
 
 ## Phase 4 — Audit log that deserves the name ⬜
 
