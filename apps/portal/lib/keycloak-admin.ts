@@ -89,6 +89,49 @@ export async function createKeycloakUser({
   return keycloakId;
 }
 
+export async function setKeycloakUserEnabled(keycloakId: string, enabled: boolean): Promise<void> {
+  const { baseUrl, realm, adminUser, adminPassword } = config();
+  const token = await getAdminToken(baseUrl, adminUser, adminPassword);
+
+  const res = await fetch(`${baseUrl}/admin/realms/${realm}/users/${keycloakId}`, {
+    method: "PUT",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ enabled }),
+  });
+
+  if (!res.ok) {
+    console.error(
+      `Keycloak ${enabled ? "enable" : "disable"} user failed: ${res.status} ${await res.text()}`
+    );
+    throw new Error(`Failed to ${enabled ? "enable" : "disable"} the Keycloak account`);
+  }
+}
+
+export async function resetKeycloakUserPassword(keycloakId: string, password: string): Promise<void> {
+  const { baseUrl, realm, adminUser, adminPassword } = config();
+  const token = await getAdminToken(baseUrl, adminUser, adminPassword);
+
+  const res = await fetch(
+    `${baseUrl}/admin/realms/${realm}/users/${keycloakId}/reset-password`,
+    {
+      method: "PUT",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ type: "password", value: password, temporary: true }),
+    }
+  );
+
+  if (!res.ok) {
+    console.error(`Keycloak password reset failed: ${res.status} ${await res.text()}`);
+    throw new Error("Failed to reset the Keycloak password");
+  }
+}
+
 export async function deleteKeycloakUser(keycloakId: string): Promise<void> {
   const { baseUrl, realm, adminUser, adminPassword } = config();
   const token = await getAdminToken(baseUrl, adminUser, adminPassword);

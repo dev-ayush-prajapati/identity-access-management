@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireUserType } from "@/lib/api-auth";
 import { logAudit } from "@/lib/audit";
-import { createKeycloakUser, generateTempPassword } from "@/lib/keycloak-admin";
+import { createKeycloakUser, deleteKeycloakUser, generateTempPassword } from "@/lib/keycloak-admin";
 import type { UserType } from "@/lib/generated/prisma";
 
 // SuperAdmin manages Admins; Admin manages Employees — each caller only ever
@@ -17,7 +17,7 @@ export async function GET() {
   if (error) return error;
 
   const users = await prisma.user.findMany({
-    where: { userType: managedUserType(session.user.userType) },
+    where: { userType: managedUserType(session.user.userType), archivedAt: null },
     include: { role: true },
     orderBy: { createdAt: "asc" },
   });
@@ -67,17 +67,39 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const user = await prisma.user.create({
-    data: {
-      keycloakId,
-      name,
-      email,
-      userType: targetType,
-      roleId: targetType === "EMPLOYEE" ? roleId : null,
-      createdById: session.user.id,
-    },
-    include: { role: true },
-  });
+  let user;
+  try {
+    user = await prisma.user.create({
+      data: {
+        keycloakId,
+        name,
+        email,
+        userType: targetType,
+        roleId: targetType === "EMPLOYEE" ? roleId : null,
+        createdById: session.user.id,
+      },
+      include: { role: true },
+    });
+  } catch (err) {
+    // Compensating action: the Keycloak account above already exists, so a
+    // failure here would otherwise leave an orphaned login with no matching
+    // portal account. Roll it back rather than leave that dangling — if the
+    // rollback itself fails, log the orphaned id for manual cleanup rather
+    // than silently swallowing it.
+    try {
+      await deleteKeycloakUser(keycloakId);
+    } catch (rollbackErr) {
+      console.error(
+        `Failed to roll back orphaned Keycloak account ${keycloakId} after a Postgres create failure:`,
+        rollbackErr
+      );
+    }
+    console.error("Failed to create Postgres user row:", err);
+    return NextResponse.json(
+      { error: "Failed to create the user record; the Keycloak account was rolled back" },
+      { status: 500 }
+    );
+  }
 
   await logAudit(session.user.id, `${targetType}_CREATED`, `Created ${targetType.toLowerCase()} "${name}" (${email})`);
 

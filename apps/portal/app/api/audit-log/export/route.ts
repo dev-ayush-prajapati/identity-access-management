@@ -33,8 +33,8 @@ export async function GET() {
     COLUMNS,
     ...logs.map((log) => [
       new Date(log.createdAt).toISOString(),
-      log.user?.name ?? "System",
-      log.user?.email ?? "",
+      log.actorName ?? log.user?.name ?? "System",
+      log.actorEmail ?? log.user?.email ?? "",
       log.action,
       log.details,
     ]),

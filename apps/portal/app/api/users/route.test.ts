@@ -7,6 +7,7 @@ const {
   userLookupMock,
   logAuditMock,
   createKeycloakUserMock,
+  deleteKeycloakUserMock,
   generateTempPasswordMock,
 } = vi.hoisted(() => ({
   authMock: vi.fn(),
@@ -23,6 +24,7 @@ const {
   userLookupMock: vi.fn(),
   logAuditMock: vi.fn(),
   createKeycloakUserMock: vi.fn(),
+  deleteKeycloakUserMock: vi.fn(),
   generateTempPasswordMock: vi.fn(),
 }));
 
@@ -31,6 +33,7 @@ vi.mock("@/lib/prisma", () => ({ prisma: prismaMock }));
 vi.mock("@/lib/audit", () => ({ logAudit: logAuditMock }));
 vi.mock("@/lib/keycloak-admin", () => ({
   createKeycloakUser: createKeycloakUserMock,
+  deleteKeycloakUser: deleteKeycloakUserMock,
   generateTempPassword: generateTempPasswordMock,
 }));
 
@@ -58,7 +61,7 @@ describe("GET /api/users — tier is derived from the caller, never a param", ()
     await GET();
 
     expect(prismaMock.user.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { userType: "ADMIN" } })
+      expect.objectContaining({ where: { userType: "ADMIN", archivedAt: null } })
     );
   });
 
@@ -68,7 +71,7 @@ describe("GET /api/users — tier is derived from the caller, never a param", ()
     await GET();
 
     expect(prismaMock.user.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { userType: "EMPLOYEE" } })
+      expect.objectContaining({ where: { userType: "EMPLOYEE", archivedAt: null } })
     );
   });
 
@@ -121,6 +124,20 @@ describe("POST /api/users", () => {
 
     expect(res.status).toBe(502);
     expect(prismaMock.user.create).not.toHaveBeenCalled();
+  });
+
+  it("500s and rolls back the Keycloak account when the Postgres create fails", async () => {
+    authMock.mockResolvedValue(fakeSession({ userType: "SUPERADMIN" }));
+    userLookupMock.mockResolvedValue(null);
+    createKeycloakUserMock.mockResolvedValue("kc-orphan");
+    prismaMock.user.create.mockRejectedValue(new Error("db down"));
+    deleteKeycloakUserMock.mockResolvedValue(undefined);
+
+    const res = await POST(jsonRequest(URL_, "POST", { name: "Bob", email: "bob@x.com" }));
+
+    expect(res.status).toBe(500);
+    expect(deleteKeycloakUserMock).toHaveBeenCalledWith("kc-orphan");
+    expect(logAuditMock).not.toHaveBeenCalled();
   });
 
   it("a SuperAdmin can only ever create Admins, even if the request body claims otherwise", async () => {
