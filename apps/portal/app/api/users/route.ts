@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireUserType } from "@/lib/api-auth";
-import { logAudit } from "@/lib/audit";
+import { logAudit, requestMeta } from "@/lib/audit";
 import { createKeycloakUser, deleteKeycloakUser, generateTempPassword } from "@/lib/keycloak-admin";
 import type { UserType } from "@/lib/generated/prisma";
 
@@ -101,7 +101,15 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  await logAudit(session.user.id, `${targetType}_CREATED`, `Created ${targetType.toLowerCase()} "${name}" (${email})`);
+  await logAudit({
+    actorId: session.user.id,
+    action: `${targetType}_CREATED`,
+    details: `Created ${targetType.toLowerCase()} "${name}" (${email})`,
+    targetType: "User",
+    targetId: user.id,
+    metadata: { userType: targetType, name, email, roleId: user.roleId },
+    ...requestMeta(req),
+  });
 
   return NextResponse.json({ ...user, tempPassword }, { status: 201 });
 }

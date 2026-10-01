@@ -18,7 +18,7 @@ const { authMock, prismaMock, logAuditMock } = vi.hoisted(() => ({
 
 vi.mock("@/auth", () => ({ auth: authMock }));
 vi.mock("@/lib/prisma", () => ({ prisma: prismaMock }));
-vi.mock("@/lib/audit", () => ({ logAudit: logAuditMock }));
+vi.mock("@/lib/audit", () => ({ logAudit: logAuditMock, requestMeta: () => ({}) }));
 
 import { PATCH, DELETE } from "./route";
 
@@ -72,7 +72,9 @@ describe("DELETE /api/roles/[id]", () => {
     const res = await DELETE(jsonRequest(URL_, "DELETE"), paramsOf("r1"));
 
     expect(res.status).toBe(200);
-    expect(logAuditMock).toHaveBeenCalledWith("user-1", "ROLE_DELETED", expect.stringContaining("HR"));
+    expect(logAuditMock).toHaveBeenCalledWith(
+      expect.objectContaining({ actorId: "user-1", action: "ROLE_DELETED", details: expect.stringContaining("HR") })
+    );
   });
 
   it("403s for a non-Admin", async () => {

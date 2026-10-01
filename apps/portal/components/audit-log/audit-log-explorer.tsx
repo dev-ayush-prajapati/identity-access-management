@@ -19,6 +19,7 @@ const CHIPS: { value: Filter; label: string }[] = [
   { value: "updated", label: "Updated" },
   { value: "deleted", label: "Deleted" },
   { value: "access", label: "Access" },
+  { value: "denied", label: "Denied" },
 ];
 
 interface AuditLogExplorerProps {
@@ -40,6 +41,7 @@ export function AuditLogExplorer({ logs, limit }: AuditLogExplorerProps) {
       updated: 0,
       deleted: 0,
       access: 0,
+      denied: 0,
       other: 0,
     };
     for (const log of logs) tally[categorizeAction(log.action)] += 1;

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireUserType } from "@/lib/api-auth";
-import { logAudit } from "@/lib/audit";
+import { logAudit, requestMeta } from "@/lib/audit";
 
 export async function PATCH(req: NextRequest) {
   const { session, error } = await requireUserType(["ADMIN"]);
@@ -40,11 +40,15 @@ export async function PATCH(req: NextRequest) {
     await prisma.roleAccess.deleteMany({ where: { roleId, applicationId } });
   }
 
-  await logAudit(
-    session.user.id,
-    granted ? "ACCESS_GRANTED" : "ACCESS_REVOKED",
-    `${granted ? "Granted" : "Revoked"} "${role.name}" access to "${application.name}"`
-  );
+  await logAudit({
+    actorId: session.user.id,
+    action: granted ? "ACCESS_GRANTED" : "ACCESS_REVOKED",
+    details: `${granted ? "Granted" : "Revoked"} "${role.name}" access to "${application.name}"`,
+    targetType: "RoleAccess",
+    targetId: `${roleId}:${applicationId}`,
+    metadata: { roleId, roleName: role.name, applicationId, applicationName: application.name, granted },
+    ...requestMeta(req),
+  });
 
   return NextResponse.json({ granted });
 }

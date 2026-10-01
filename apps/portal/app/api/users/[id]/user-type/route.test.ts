@@ -12,7 +12,7 @@ const { authMock, prismaMock, userLookupMock, logAuditMock } = vi.hoisted(() => 
 
 vi.mock("@/auth", () => ({ auth: authMock }));
 vi.mock("@/lib/prisma", () => ({ prisma: prismaMock }));
-vi.mock("@/lib/audit", () => ({ logAudit: logAuditMock }));
+vi.mock("@/lib/audit", () => ({ logAudit: logAuditMock, requestMeta: () => ({}) }));
 
 import { PATCH } from "./route";
 
@@ -157,9 +157,11 @@ describe("PATCH /api/users/[id]/user-type", () => {
       expect.objectContaining({ where: { id: "u2" }, data: { userType: "SUPERADMIN" } })
     );
     expect(logAuditMock).toHaveBeenCalledWith(
-      "boss-1",
-      "USER_PROMOTED",
-      expect.stringContaining("Bob")
+      expect.objectContaining({
+        actorId: "boss-1",
+        action: "USER_PROMOTED",
+        details: expect.stringContaining("Bob"),
+      })
     );
   });
 
@@ -175,9 +177,11 @@ describe("PATCH /api/users/[id]/user-type", () => {
       expect.objectContaining({ where: { userType: "SUPERADMIN", archivedAt: null } })
     );
     expect(logAuditMock).toHaveBeenCalledWith(
-      "boss-1",
-      "USER_DEMOTED",
-      expect.stringContaining("Cara")
+      expect.objectContaining({
+        actorId: "boss-1",
+        action: "USER_DEMOTED",
+        details: expect.stringContaining("Cara"),
+      })
     );
   });
 });

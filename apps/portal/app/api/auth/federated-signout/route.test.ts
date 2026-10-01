@@ -1,57 +1,86 @@
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { NextRequest } from "next/server";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { jsonRequest } from "@/test/helpers";
 
-const { getTokenMock, signOutMock } = vi.hoisted(() => ({
+const { getTokenMock, signOutMock, logAuditMock } = vi.hoisted(() => ({
   getTokenMock: vi.fn(),
   signOutMock: vi.fn(),
+  logAuditMock: vi.fn(),
 }));
 
 vi.mock("next-auth/jwt", () => ({ getToken: getTokenMock }));
 vi.mock("@/auth", () => ({ signOut: signOutMock }));
+vi.mock("@/lib/audit", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/audit")>("@/lib/audit");
+  return { ...actual, logAudit: logAuditMock };
+});
 
-import * as routeModule from "./route";
-const { POST } = routeModule;
+import * as route from "./route";
+const { POST } = route;
 
 const URL_ = "http://localhost:3000/api/auth/federated-signout";
 
 beforeEach(() => {
   vi.clearAllMocks();
   signOutMock.mockResolvedValue(undefined);
-  vi.stubEnv("AUTH_KEYCLOAK_ISSUER", "http://localhost:8080/realms/iam-portal");
-  vi.stubEnv("AUTH_KEYCLOAK_ID", "portal");
+  delete process.env.AUTH_KEYCLOAK_ISSUER;
+  delete process.env.AUTH_KEYCLOAK_ID;
 });
 
-afterEach(() => {
-  vi.unstubAllEnvs();
-});
+describe("POST /api/auth/federated-signout", () => {
+  // Phase 0 regression: this route used to be a GET handler that mutated
+  // session state, letting a cross-site <img>/<a> force a victim's logout.
+  it("exports no GET handler at all", () => {
+    expect((route as Record<string, unknown>).GET).toBeUndefined();
+  });
 
-it("exposes no GET handler (CSRF regression: sign-out must not be reachable via a cross-site navigation)", () => {
-  expect((routeModule as Record<string, unknown>).GET).toBeUndefined();
-});
+  it("audit-logs the logout when the token carries a userId", async () => {
+    getTokenMock.mockResolvedValue({ userId: "u1" });
 
-it("ends the local session and redirects to Keycloak's end-session endpoint", async () => {
-  getTokenMock.mockResolvedValue({ idToken: "kc-id-token" });
+    await POST(jsonRequest(URL_, "POST"));
 
-  const res = await POST(new NextRequest(URL_, { method: "POST" }));
+    expect(logAuditMock).toHaveBeenCalledWith(
+      expect.objectContaining({ actorId: "u1", action: "LOGOUT" })
+    );
+  });
 
-  expect(signOutMock).toHaveBeenCalledWith({ redirect: false });
-  expect(res.status).toBeGreaterThanOrEqual(300);
-  expect(res.status).toBeLessThan(400);
+  it("skips logging when there is no valid token (already signed out / forged request)", async () => {
+    getTokenMock.mockResolvedValue(null);
 
-  const location = new URL(res.headers.get("location")!);
-  expect(location.origin + location.pathname).toBe(
-    "http://localhost:8080/realms/iam-portal/protocol/openid-connect/logout"
-  );
-  expect(location.searchParams.get("id_token_hint")).toBe("kc-id-token");
-  expect(location.searchParams.get("client_id")).toBe("portal");
-  expect(location.searchParams.get("post_logout_redirect_uri")).toBe("http://localhost:3000/");
-});
+    await POST(jsonRequest(URL_, "POST"));
 
-it("falls back to a plain redirect home when there's no Keycloak id_token", async () => {
-  getTokenMock.mockResolvedValue(null);
+    expect(logAuditMock).not.toHaveBeenCalled();
+  });
 
-  const res = await POST(new NextRequest(URL_, { method: "POST" }));
+  it("always calls signOut regardless of token state", async () => {
+    getTokenMock.mockResolvedValue(null);
 
-  expect(signOutMock).toHaveBeenCalledWith({ redirect: false });
-  expect(res.headers.get("location")).toBe("http://localhost:3000/");
+    await POST(jsonRequest(URL_, "POST"));
+
+    expect(signOutMock).toHaveBeenCalledWith({ redirect: false });
+  });
+
+  it("redirects to / when there's no idToken or issuer configured", async () => {
+    getTokenMock.mockResolvedValue({ userId: "u1" });
+
+    const res = await POST(jsonRequest(URL_, "POST"));
+
+    expect(res.status).toBe(307);
+    expect(res.headers.get("location")).toBe("http://localhost:3000/");
+  });
+
+  it("redirects to Keycloak's end_session_endpoint when idToken and issuer are present", async () => {
+    process.env.AUTH_KEYCLOAK_ISSUER = "http://localhost:8080/realms/iam-portal";
+    process.env.AUTH_KEYCLOAK_ID = "portal";
+    getTokenMock.mockResolvedValue({ userId: "u1", idToken: "the-id-token" });
+
+    const res = await POST(jsonRequest(URL_, "POST"));
+
+    expect(res.status).toBe(307);
+    const location = res.headers.get("location") ?? "";
+    expect(location.startsWith("http://localhost:8080/realms/iam-portal/protocol/openid-connect/logout?")).toBe(
+      true
+    );
+    expect(location).toContain("id_token_hint=the-id-token");
+    expect(location).toContain("client_id=portal");
+  });
 });

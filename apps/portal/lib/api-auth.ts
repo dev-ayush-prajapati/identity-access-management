@@ -2,6 +2,7 @@ import { auth } from "@/auth";
 import { NextResponse } from "next/server";
 import type { Session } from "next-auth";
 import { prisma } from "@/lib/prisma";
+import { logAudit } from "@/lib/audit";
 import type { UserType } from "@/lib/generated/prisma";
 
 // Server-side gate for API routes. Middleware already protects the page
@@ -31,11 +32,29 @@ export async function requireUserType(
     return { error: NextResponse.json({ error: "Unauthorized" }, { status: 401 }) };
   }
 
+  // Both 403 branches below are an authenticated, identifiable caller being
+  // turned away — worth an audit row. The two 401 branches above aren't: an
+  // absent/stale session has no reliable actor to attribute, and logging
+  // every unauthenticated hit would just be noise.
   if (current.status === "DISABLED") {
+    await logAudit({
+      actorId: session.user.id,
+      action: "ACCESS_DENIED",
+      details: "Blocked a disabled account from an API route",
+      metadata: { reason: "disabled", allowed },
+      outcome: "DENIED",
+    });
     return { error: NextResponse.json({ error: "Forbidden" }, { status: 403 }) };
   }
 
   if (!allowed.includes(current.userType)) {
+    await logAudit({
+      actorId: session.user.id,
+      action: "ACCESS_DENIED",
+      details: `Blocked ${current.userType} from a route requiring ${allowed.join(" or ")}`,
+      metadata: { reason: "wrong_user_type", userType: current.userType, allowed },
+      outcome: "DENIED",
+    });
     return { error: NextResponse.json({ error: "Forbidden" }, { status: 403 }) };
   }
 

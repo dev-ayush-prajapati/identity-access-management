@@ -1,6 +1,7 @@
 import NextAuth from "next-auth";
 import { authConfig } from "./auth.config";
 import { prisma } from "@/lib/prisma";
+import { evaluateSignIn } from "@/lib/evaluate-sign-in";
 
 // Full config: Node runtime only (route handlers, Server Components).
 // Adds the Prisma-dependent callbacks on top of the edge-safe authConfig.
@@ -11,13 +12,11 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     // Keycloak proves identity; Postgres decides authorization. A Keycloak
     // login with no matching, active User row is not allowed into the app —
     // this is also where a disabled account is turned away, not just at the
-    // API layer.
+    // API layer. The actual decision (and its audit logging) lives in
+    // lib/evaluate-sign-in.ts, unit-tested there — this callback is just the
+    // NextAuth wiring around it.
     async signIn({ profile }) {
-      if (!profile?.sub) return false;
-      const user = await prisma.user.findUnique({
-        where: { keycloakId: profile.sub },
-      });
-      return !!user && user.status === "ACTIVE";
+      return evaluateSignIn(profile?.sub);
     },
     // `profile`/`account` are only present on the initial sign-in request;
     // on later requests (token refresh) we just pass the token through

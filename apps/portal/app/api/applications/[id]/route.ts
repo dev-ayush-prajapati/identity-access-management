@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireUserType } from "@/lib/api-auth";
-import { logAudit } from "@/lib/audit";
+import { logAudit, requestMeta } from "@/lib/audit";
 import { isHttpUrl } from "@/lib/validate-url";
 
 export async function PATCH(
@@ -34,17 +34,21 @@ export async function PATCH(
     return NextResponse.json({ error: "Application not found" }, { status: 404 });
   }
 
-  await logAudit(
-    session.user.id,
-    "APPLICATION_UPDATED",
-    `Updated application "${application.name}"`
-  );
+  await logAudit({
+    actorId: session.user.id,
+    action: "APPLICATION_UPDATED",
+    details: `Updated application "${application.name}"`,
+    targetType: "Application",
+    targetId: id,
+    metadata: data,
+    ...requestMeta(req),
+  });
 
   return NextResponse.json(application);
 }
 
 export async function DELETE(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { session, error } = await requireUserType(["SUPERADMIN"]);
@@ -67,11 +71,15 @@ export async function DELETE(
     return NextResponse.json({ error: "Application not found" }, { status: 404 });
   }
 
-  await logAudit(
-    session.user.id,
-    "APPLICATION_DELETED",
-    `Deleted application "${application.name}"`
-  );
+  await logAudit({
+    actorId: session.user.id,
+    action: "APPLICATION_DELETED",
+    details: `Deleted application "${application.name}"`,
+    targetType: "Application",
+    targetId: id,
+    metadata: { name: application.name },
+    ...requestMeta(req),
+  });
 
   return NextResponse.json({ success: true });
 }

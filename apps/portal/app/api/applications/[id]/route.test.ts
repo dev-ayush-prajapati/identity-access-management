@@ -18,7 +18,7 @@ const { authMock, prismaMock, logAuditMock } = vi.hoisted(() => ({
 
 vi.mock("@/auth", () => ({ auth: authMock }));
 vi.mock("@/lib/prisma", () => ({ prisma: prismaMock }));
-vi.mock("@/lib/audit", () => ({ logAudit: logAuditMock }));
+vi.mock("@/lib/audit", () => ({ logAudit: logAuditMock, requestMeta: () => ({}) }));
 
 import { PATCH, DELETE } from "./route";
 
@@ -71,9 +71,11 @@ describe("PATCH /api/applications/[id]", () => {
 
     expect(res.status).toBe(200);
     expect(logAuditMock).toHaveBeenCalledWith(
-      "user-1",
-      "APPLICATION_UPDATED",
-      expect.stringContaining("New")
+      expect.objectContaining({
+        actorId: "user-1",
+        action: "APPLICATION_UPDATED",
+        details: expect.stringContaining("New"),
+      })
     );
   });
 });
@@ -114,9 +116,11 @@ describe("DELETE /api/applications/[id]", () => {
 
     expect(res.status).toBe(200);
     expect(logAuditMock).toHaveBeenCalledWith(
-      "user-1",
-      "APPLICATION_DELETED",
-      expect.stringContaining("Finance")
+      expect.objectContaining({
+        actorId: "user-1",
+        action: "APPLICATION_DELETED",
+        details: expect.stringContaining("Finance"),
+      })
     );
   });
 });

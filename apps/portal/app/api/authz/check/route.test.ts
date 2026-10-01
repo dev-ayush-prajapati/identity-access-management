@@ -11,7 +11,7 @@ const { prismaMock, logAuditMock } = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/prisma", () => ({ prisma: prismaMock }));
-vi.mock("@/lib/audit", () => ({ logAudit: logAuditMock }));
+vi.mock("@/lib/audit", () => ({ logAudit: logAuditMock, requestMeta: () => ({}) }));
 
 import { POST } from "./route";
 
@@ -182,18 +182,23 @@ describe("audit logging", () => {
     await POST(jsonRequest(URL_, "POST", body({ trigger: "signIn" }), AUTH_HEADER));
 
     expect(logAuditMock).toHaveBeenCalledWith(
-      "u1",
-      "AUTHZ_DENIED",
-      expect.stringContaining("no_grant")
+      expect.objectContaining({
+        actorId: "u1",
+        action: "AUTHZ_DENIED",
+        outcome: "DENIED",
+        details: expect.stringContaining("no_grant"),
+      })
     );
   });
 
-  it("logs the denial with a null userId when there's no account to attribute it to", async () => {
+  it("logs the denial with a null actorId when there's no account to attribute it to", async () => {
     prismaMock.user.findUnique.mockResolvedValue(null);
 
     await POST(jsonRequest(URL_, "POST", body({ trigger: "signIn" }), AUTH_HEADER));
 
-    expect(logAuditMock).toHaveBeenCalledWith(null, "AUTHZ_DENIED", expect.any(String));
+    expect(logAuditMock).toHaveBeenCalledWith(
+      expect.objectContaining({ actorId: null, action: "AUTHZ_DENIED" })
+    );
   });
 
   it("does not log an allow, even on signIn", async () => {

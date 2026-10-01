@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireUserType } from "@/lib/api-auth";
-import { logAudit } from "@/lib/audit";
+import { logAudit, requestMeta } from "@/lib/audit";
 
 // Promote/demote between ADMIN and SUPERADMIN. SuperAdmin-only, and
 // deliberately its own route rather than folded into the general PATCH in
@@ -59,11 +59,15 @@ export async function PATCH(
     include: { role: true },
   });
 
-  await logAudit(
-    session.user.id,
-    userType === "SUPERADMIN" ? "USER_PROMOTED" : "USER_DEMOTED",
-    `${userType === "SUPERADMIN" ? "Promoted" : "Demoted"} "${target.name}" from ${target.userType} to ${userType}`
-  );
+  await logAudit({
+    actorId: session.user.id,
+    action: userType === "SUPERADMIN" ? "USER_PROMOTED" : "USER_DEMOTED",
+    details: `${userType === "SUPERADMIN" ? "Promoted" : "Demoted"} "${target.name}" from ${target.userType} to ${userType}`,
+    targetType: "User",
+    targetId: id,
+    metadata: { from: target.userType, to: userType },
+    ...requestMeta(req),
+  });
 
   return NextResponse.json(user);
 }

@@ -14,7 +14,7 @@ const { authMock, prismaMock, logAuditMock } = vi.hoisted(() => ({
 
 vi.mock("@/auth", () => ({ auth: authMock }));
 vi.mock("@/lib/prisma", () => ({ prisma: prismaMock }));
-vi.mock("@/lib/audit", () => ({ logAudit: logAuditMock }));
+vi.mock("@/lib/audit", () => ({ logAudit: logAuditMock, requestMeta: () => ({}) }));
 
 import { PATCH } from "./route";
 
@@ -66,9 +66,7 @@ it("grants access via upsert", async () => {
   });
   expect(prismaMock.roleAccess.deleteMany).not.toHaveBeenCalled();
   expect(logAuditMock).toHaveBeenCalledWith(
-    "user-1",
-    "ACCESS_GRANTED",
-    expect.stringContaining("HR")
+    expect.objectContaining({ actorId: "user-1", action: "ACCESS_GRANTED", details: expect.stringContaining("HR") })
   );
 });
 
@@ -83,8 +81,10 @@ it("revokes access via deleteMany", async () => {
   });
   expect(prismaMock.roleAccess.upsert).not.toHaveBeenCalled();
   expect(logAuditMock).toHaveBeenCalledWith(
-    "user-1",
-    "ACCESS_REVOKED",
-    expect.stringContaining("Finance")
+    expect.objectContaining({
+      actorId: "user-1",
+      action: "ACCESS_REVOKED",
+      details: expect.stringContaining("Finance"),
+    })
   );
 });

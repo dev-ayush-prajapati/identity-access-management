@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
 // AUDIT_LOG_EXPORTED, ...), never a DB enum — so everything here reads the
 // trailing verb instead of matching a fixed list. A new action shipped by a
 // future route renders as a neutral badge rather than crashing the log.
-export type AuditActionCategory = "created" | "updated" | "deleted" | "access" | "other";
+export type AuditActionCategory = "created" | "updated" | "deleted" | "access" | "denied" | "other";
 
 function verbOf(action: string): string {
   const parts = action.split("_");
@@ -22,10 +22,15 @@ export function categorizeAction(action: string): AuditActionCategory {
     case "UPDATED":
       return "updated";
     case "DELETED":
+    // A User row is archived, never hard-deleted (see docs/rebuild-plan.md
+    // Phase 3) — same category from a filter's point of view.
+    case "ARCHIVED":
       return "deleted";
     case "GRANTED":
     case "REVOKED":
       return "access";
+    case "DENIED":
+      return "denied";
     default:
       return "other";
   }
@@ -41,7 +46,9 @@ function toneOf(action: string): ActionTone {
     case "GRANTED":
       return "positive";
     case "DELETED":
+    case "ARCHIVED":
     case "REVOKED":
+    case "DENIED":
       return "destructive";
     default:
       return "neutral";

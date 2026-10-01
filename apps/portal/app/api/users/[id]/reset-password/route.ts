@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireUserType } from "@/lib/api-auth";
-import { logAudit } from "@/lib/audit";
+import { logAudit, requestMeta } from "@/lib/audit";
 import { generateTempPassword, resetKeycloakUserPassword } from "@/lib/keycloak-admin";
 import type { UserType } from "@/lib/generated/prisma";
 
@@ -13,7 +13,7 @@ function managedUserType(callerType: UserType): UserType {
 // for someone in their tier (lost device, suspected compromise, etc.) — same
 // one-time-display pattern as creating the account in the first place.
 export async function POST(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { session, error } = await requireUserType(["SUPERADMIN", "ADMIN"]);
@@ -36,11 +36,14 @@ export async function POST(
     );
   }
 
-  await logAudit(
-    session.user.id,
-    `${target.userType}_PASSWORD_RESET`,
-    `Forced a password reset for ${target.userType.toLowerCase()} "${target.name}"`
-  );
+  await logAudit({
+    actorId: session.user.id,
+    action: `${target.userType}_PASSWORD_RESET`,
+    details: `Forced a password reset for ${target.userType.toLowerCase()} "${target.name}"`,
+    targetType: "User",
+    targetId: id,
+    ...requestMeta(req),
+  });
 
   return NextResponse.json({ tempPassword });
 }

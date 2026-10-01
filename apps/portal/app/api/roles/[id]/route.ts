@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireUserType } from "@/lib/api-auth";
-import { logAudit } from "@/lib/audit";
+import { logAudit, requestMeta } from "@/lib/audit";
 
 export async function PATCH(
   req: NextRequest,
@@ -24,13 +24,21 @@ export async function PATCH(
     return NextResponse.json({ error: "Role not found" }, { status: 404 });
   }
 
-  await logAudit(session.user.id, "ROLE_UPDATED", `Renamed role to "${name}"`);
+  await logAudit({
+    actorId: session.user.id,
+    action: "ROLE_UPDATED",
+    details: `Renamed role to "${name}"`,
+    targetType: "Role",
+    targetId: id,
+    metadata: { name },
+    ...requestMeta(req),
+  });
 
   return NextResponse.json(role);
 }
 
 export async function DELETE(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { session, error } = await requireUserType(["ADMIN"]);
@@ -53,7 +61,15 @@ export async function DELETE(
     return NextResponse.json({ error: "Role not found" }, { status: 404 });
   }
 
-  await logAudit(session.user.id, "ROLE_DELETED", `Deleted role "${role.name}"`);
+  await logAudit({
+    actorId: session.user.id,
+    action: "ROLE_DELETED",
+    details: `Deleted role "${role.name}"`,
+    targetType: "Role",
+    targetId: id,
+    metadata: { name: role.name },
+    ...requestMeta(req),
+  });
 
   return NextResponse.json({ success: true });
 }
