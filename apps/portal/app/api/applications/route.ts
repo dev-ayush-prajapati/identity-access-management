@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireUserType } from "@/lib/api-auth";
-import { logAudit } from "@/lib/audit";
+import { logAudit, requestMeta } from "@/lib/audit";
 import { isHttpUrl } from "@/lib/validate-url";
 
 export async function GET() {
@@ -44,7 +44,15 @@ export async function POST(req: NextRequest) {
     data: { name, url, description },
   });
 
-  await logAudit(session.user.id, "APPLICATION_CREATED", `Created application "${name}"`);
+  await logAudit({
+    actorId: session.user.id,
+    action: "APPLICATION_CREATED",
+    details: `Created application "${name}"`,
+    targetType: "Application",
+    targetId: application.id,
+    metadata: { name, url },
+    ...requestMeta(req),
+  });
 
   return NextResponse.json(application, { status: 201 });
 }

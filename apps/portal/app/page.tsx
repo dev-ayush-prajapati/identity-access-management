@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Playfair_Display, Inter } from "next/font/google";
+import localFont from "next/font/local";
 import {
   Activity,
   Check,
@@ -13,16 +13,18 @@ import { redirect } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { AnimatedNumber } from "@/components/common/animated-number";
 
-const displaySerif = Playfair_Display({
+// Vendored for the same reason as the fonts in app/layout.tsx.
+const displaySerif = localFont({
+  src: "./fonts/playfair-display-latin.woff2",
   variable: "--font-slash-display",
-  subsets: ["latin"],
-  weight: ["400", "600", "700"],
+  weight: "400 700",
+  adjustFontFallback: "Times New Roman",
 });
 
-const uiSans = Inter({
+const uiSans = localFont({
+  src: "./fonts/inter-latin.woff2",
   variable: "--font-slash-sans",
-  subsets: ["latin"],
-  weight: ["300", "400", "500", "600"],
+  weight: "300 600",
 });
 
 const ZONE_BY_USER_TYPE: Record<string, string> = {

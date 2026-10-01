@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireUserType } from "@/lib/api-auth";
-import { logAudit } from "@/lib/audit";
+import { logAudit, requestMeta } from "@/lib/audit";
 
 export async function GET() {
   const { error } = await requireUserType(["SUPERADMIN", "ADMIN"]);
@@ -29,7 +29,15 @@ export async function POST(req: NextRequest) {
 
   const role = await prisma.role.create({ data: { name } });
 
-  await logAudit(session.user.id, "ROLE_CREATED", `Created role "${name}"`);
+  await logAudit({
+    actorId: session.user.id,
+    action: "ROLE_CREATED",
+    details: `Created role "${name}"`,
+    targetType: "Role",
+    targetId: role.id,
+    metadata: { name },
+    ...requestMeta(req),
+  });
 
   return NextResponse.json(role, { status: 201 });
 }

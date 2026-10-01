@@ -1,7 +1,7 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireUserType } from "@/lib/api-auth";
-import { logAudit } from "@/lib/audit";
+import { logAudit, requestMeta } from "@/lib/audit";
 
 const COLUMNS = ["Timestamp", "User", "Email", "Action", "Details"];
 
@@ -19,7 +19,7 @@ export function toCsv(rows: (string | null | undefined)[][]): string {
   return rows.map((row) => row.map(csvField).join(",")).join("\r\n");
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   const { session, error } = await requireUserType(["SUPERADMIN", "ADMIN"]);
   if (error) return error;
 
@@ -42,11 +42,13 @@ export async function GET() {
 
   // Reading the governance record off-platform is itself a governance event.
   // Logged after the query, so the export never contains its own entry.
-  await logAudit(
-    session.user.id,
-    "AUDIT_LOG_EXPORTED",
-    `Exported ${logs.length} audit log ${logs.length === 1 ? "entry" : "entries"} to CSV`
-  );
+  await logAudit({
+    actorId: session.user.id,
+    action: "AUDIT_LOG_EXPORTED",
+    details: `Exported ${logs.length} audit log ${logs.length === 1 ? "entry" : "entries"} to CSV`,
+    metadata: { count: logs.length },
+    ...requestMeta(req),
+  });
 
   return new NextResponse(csv, {
     headers: {

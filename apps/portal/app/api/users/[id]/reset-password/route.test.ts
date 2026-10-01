@@ -21,7 +21,7 @@ const {
 
 vi.mock("@/auth", () => ({ auth: authMock }));
 vi.mock("@/lib/prisma", () => ({ prisma: prismaMock }));
-vi.mock("@/lib/audit", () => ({ logAudit: logAuditMock }));
+vi.mock("@/lib/audit", () => ({ logAudit: logAuditMock, requestMeta: () => ({}) }));
 vi.mock("@/lib/keycloak-admin", () => ({
   resetKeycloakUserPassword: resetKeycloakUserPasswordMock,
   generateTempPassword: generateTempPasswordMock,
@@ -113,9 +113,11 @@ describe("POST /api/users/[id]/reset-password", () => {
     expect(resetKeycloakUserPasswordMock).toHaveBeenCalledWith("kc-456", "temp-pw-999");
     expect(data.tempPassword).toBe("temp-pw-999");
     expect(logAuditMock).toHaveBeenCalledWith(
-      "admin-1",
-      "EMPLOYEE_PASSWORD_RESET",
-      expect.stringContaining("Amy")
+      expect.objectContaining({
+        actorId: "admin-1",
+        action: "EMPLOYEE_PASSWORD_RESET",
+        details: expect.stringContaining("Amy"),
+      })
     );
   });
 });

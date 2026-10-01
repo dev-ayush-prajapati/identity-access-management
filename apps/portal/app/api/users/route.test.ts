@@ -30,7 +30,7 @@ const {
 
 vi.mock("@/auth", () => ({ auth: authMock }));
 vi.mock("@/lib/prisma", () => ({ prisma: prismaMock }));
-vi.mock("@/lib/audit", () => ({ logAudit: logAuditMock }));
+vi.mock("@/lib/audit", () => ({ logAudit: logAuditMock, requestMeta: () => ({}) }));
 vi.mock("@/lib/keycloak-admin", () => ({
   createKeycloakUser: createKeycloakUserMock,
   deleteKeycloakUser: deleteKeycloakUserMock,
@@ -192,9 +192,11 @@ describe("POST /api/users", () => {
       })
     );
     expect(logAuditMock).toHaveBeenCalledWith(
-      "admin-1",
-      "EMPLOYEE_CREATED",
-      expect.stringContaining("Amy")
+      expect.objectContaining({
+        actorId: "admin-1",
+        action: "EMPLOYEE_CREATED",
+        details: expect.stringContaining("Amy"),
+      })
     );
   });
 });

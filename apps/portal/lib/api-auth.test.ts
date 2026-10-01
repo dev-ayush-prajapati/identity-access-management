@@ -1,12 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fakeSession } from "@/test/helpers";
 
-const { authMock, findUniqueMock } = vi.hoisted(() => ({
+const { authMock, findUniqueMock, logAuditMock } = vi.hoisted(() => ({
   authMock: vi.fn(),
   findUniqueMock: vi.fn(),
+  logAuditMock: vi.fn(),
 }));
 vi.mock("@/auth", () => ({ auth: authMock }));
 vi.mock("@/lib/prisma", () => ({ prisma: { user: { findUnique: findUniqueMock } } }));
+vi.mock("@/lib/audit", () => ({ logAudit: logAuditMock }));
 
 import { requireUserType } from "./api-auth";
 
@@ -14,6 +16,7 @@ describe("requireUserType", () => {
   beforeEach(() => {
     authMock.mockReset();
     findUniqueMock.mockReset();
+    logAuditMock.mockReset();
   });
 
   it("401s when there is no session", async () => {
@@ -24,6 +27,7 @@ describe("requireUserType", () => {
     expect(session).toBeUndefined();
     expect(error?.status).toBe(401);
     expect(findUniqueMock).not.toHaveBeenCalled();
+    expect(logAuditMock).not.toHaveBeenCalled();
   });
 
   it("401s when the session's user no longer exists in Postgres (deleted since the token was issued)", async () => {
@@ -34,26 +38,43 @@ describe("requireUserType", () => {
 
     expect(session).toBeUndefined();
     expect(error?.status).toBe(401);
+    expect(logAuditMock).not.toHaveBeenCalled();
   });
 
-  it("403s a disabled user even if the session's stale token still says ADMIN", async () => {
-    authMock.mockResolvedValue(fakeSession({ userType: "ADMIN" }));
+  it("403s a disabled user even if the session's stale token still says ADMIN, and audit-logs it", async () => {
+    authMock.mockResolvedValue(fakeSession({ id: "user-1", userType: "ADMIN" }));
     findUniqueMock.mockResolvedValue({ userType: "ADMIN", roleId: null, status: "DISABLED" });
 
     const { error, session } = await requireUserType(["ADMIN", "SUPERADMIN"]);
 
     expect(session).toBeUndefined();
     expect(error?.status).toBe(403);
+    expect(logAuditMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actorId: "user-1",
+        action: "ACCESS_DENIED",
+        outcome: "DENIED",
+        metadata: expect.objectContaining({ reason: "disabled" }),
+      })
+    );
   });
 
-  it("403s when the caller's live userType isn't in the allowed list", async () => {
-    authMock.mockResolvedValue(fakeSession({ userType: "EMPLOYEE" }));
+  it("403s when the caller's live userType isn't in the allowed list, and audit-logs it", async () => {
+    authMock.mockResolvedValue(fakeSession({ id: "user-1", userType: "EMPLOYEE" }));
     findUniqueMock.mockResolvedValue({ userType: "EMPLOYEE", roleId: "role-1", status: "ACTIVE" });
 
     const { error, session } = await requireUserType(["ADMIN", "SUPERADMIN"]);
 
     expect(session).toBeUndefined();
     expect(error?.status).toBe(403);
+    expect(logAuditMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actorId: "user-1",
+        action: "ACCESS_DENIED",
+        outcome: "DENIED",
+        metadata: expect.objectContaining({ reason: "wrong_user_type", userType: "EMPLOYEE" }),
+      })
+    );
   });
 
   it("403s based on the live userType, not a stale token claim (demoted since the token was issued)", async () => {

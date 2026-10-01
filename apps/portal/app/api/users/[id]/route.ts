@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireUserType } from "@/lib/api-auth";
-import { logAudit } from "@/lib/audit";
+import { logAudit, requestMeta } from "@/lib/audit";
 import { deleteKeycloakUser, setKeycloakUserEnabled } from "@/lib/keycloak-admin";
 import type { UserType } from "@/lib/generated/prisma";
 
@@ -49,11 +49,15 @@ export async function PATCH(
       include: { role: true },
     });
 
-    await logAudit(
-      session.user.id,
-      status === "ACTIVE" ? `${target.userType}_ENABLED` : `${target.userType}_DISABLED`,
-      `${status === "ACTIVE" ? "Enabled" : "Disabled"} ${target.userType.toLowerCase()} "${target.name}"`
-    );
+    await logAudit({
+      actorId: session.user.id,
+      action: status === "ACTIVE" ? `${target.userType}_ENABLED` : `${target.userType}_DISABLED`,
+      details: `${status === "ACTIVE" ? "Enabled" : "Disabled"} ${target.userType.toLowerCase()} "${target.name}"`,
+      targetType: "User",
+      targetId: id,
+      metadata: { status },
+      ...requestMeta(req),
+    });
 
     return NextResponse.json(user);
   }
@@ -82,13 +86,21 @@ export async function PATCH(
     include: { role: true },
   });
 
-  await logAudit(session.user.id, `${target.userType}_UPDATED`, `Updated ${target.userType.toLowerCase()} "${user.name}"`);
+  await logAudit({
+    actorId: session.user.id,
+    action: `${target.userType}_UPDATED`,
+    details: `Updated ${target.userType.toLowerCase()} "${user.name}"`,
+    targetType: "User",
+    targetId: id,
+    metadata: { name, roleId },
+    ...requestMeta(req),
+  });
 
   return NextResponse.json(user);
 }
 
 export async function DELETE(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { session, error } = await requireUserType(["SUPERADMIN", "ADMIN"]);
@@ -115,11 +127,15 @@ export async function DELETE(
   // that reference this id keep resolving instead of dangling.
   await prisma.user.update({ where: { id }, data: { archivedAt: new Date(), status: "DISABLED" } });
 
-  await logAudit(
-    session.user.id,
-    `${target.userType}_ARCHIVED`,
-    `Archived ${target.userType.toLowerCase()} "${target.name}" (${target.email}) — Keycloak login removed, portal record kept for audit history`
-  );
+  await logAudit({
+    actorId: session.user.id,
+    action: `${target.userType}_ARCHIVED`,
+    details: `Archived ${target.userType.toLowerCase()} "${target.name}" (${target.email}) — Keycloak login removed, portal record kept for audit history`,
+    targetType: "User",
+    targetId: id,
+    metadata: { email: target.email },
+    ...requestMeta(req),
+  });
 
   return NextResponse.json({ success: true });
 }

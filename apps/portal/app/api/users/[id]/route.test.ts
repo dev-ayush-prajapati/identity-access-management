@@ -28,7 +28,7 @@ const { authMock, prismaMock, userLookupMock, logAuditMock, deleteKeycloakUserMo
 
 vi.mock("@/auth", () => ({ auth: authMock }));
 vi.mock("@/lib/prisma", () => ({ prisma: prismaMock }));
-vi.mock("@/lib/audit", () => ({ logAudit: logAuditMock }));
+vi.mock("@/lib/audit", () => ({ logAudit: logAuditMock, requestMeta: () => ({}) }));
 vi.mock("@/lib/keycloak-admin", () => ({
   deleteKeycloakUser: deleteKeycloakUserMock,
   setKeycloakUserEnabled: setKeycloakUserEnabledMock,
@@ -159,9 +159,11 @@ describe("PATCH /api/users/[id]", () => {
       })
     );
     expect(logAuditMock).toHaveBeenCalledWith(
-      "admin-1",
-      "EMPLOYEE_UPDATED",
-      expect.stringContaining("Amy Smith")
+      expect.objectContaining({
+        actorId: "admin-1",
+        action: "EMPLOYEE_UPDATED",
+        details: expect.stringContaining("Amy Smith"),
+      })
     );
   });
 
@@ -181,9 +183,11 @@ describe("PATCH /api/users/[id]", () => {
       expect.objectContaining({ data: { name: "Bobby", roleId: null } })
     );
     expect(logAuditMock).toHaveBeenCalledWith(
-      "boss-1",
-      "ADMIN_UPDATED",
-      expect.stringContaining("Bobby")
+      expect.objectContaining({
+        actorId: "boss-1",
+        action: "ADMIN_UPDATED",
+        details: expect.stringContaining("Bobby"),
+      })
     );
   });
 
@@ -241,9 +245,11 @@ describe("PATCH /api/users/[id]", () => {
       expect.objectContaining({ where: { id: "u1" }, data: { status: "DISABLED" } })
     );
     expect(logAuditMock).toHaveBeenCalledWith(
-      "admin-1",
-      "EMPLOYEE_DISABLED",
-      expect.stringContaining("Amy")
+      expect.objectContaining({
+        actorId: "admin-1",
+        action: "EMPLOYEE_DISABLED",
+        details: expect.stringContaining("Amy"),
+      })
     );
   });
 
@@ -334,9 +340,11 @@ describe("DELETE /api/users/[id]", () => {
       })
     );
     expect(logAuditMock).toHaveBeenCalledWith(
-      "admin-1",
-      "EMPLOYEE_ARCHIVED",
-      expect.stringContaining("amy@x.com")
+      expect.objectContaining({
+        actorId: "admin-1",
+        action: "EMPLOYEE_ARCHIVED",
+        details: expect.stringContaining("amy@x.com"),
+      })
     );
   });
 });

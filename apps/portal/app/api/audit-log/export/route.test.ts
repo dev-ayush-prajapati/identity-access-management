@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fakeSession, mockLiveCallerFromSession } from "@/test/helpers";
+import { fakeSession, jsonRequest, mockLiveCallerFromSession } from "@/test/helpers";
 
 const { authMock, prismaMock, logAuditMock } = vi.hoisted(() => ({
   authMock: vi.fn(),
@@ -14,9 +14,15 @@ const { authMock, prismaMock, logAuditMock } = vi.hoisted(() => ({
 
 vi.mock("@/auth", () => ({ auth: authMock }));
 vi.mock("@/lib/prisma", () => ({ prisma: prismaMock }));
-vi.mock("@/lib/audit", () => ({ logAudit: logAuditMock }));
+vi.mock("@/lib/audit", () => ({ logAudit: logAuditMock, requestMeta: () => ({}) }));
 
 import { GET, csvField } from "./route";
+
+const URL_ = "http://localhost:3000/api/audit-log/export";
+
+function getReq() {
+  return jsonRequest(URL_, "GET");
+}
 
 const LOGS = [
   {
@@ -47,26 +53,28 @@ describe("GET /api/audit-log/export", () => {
   it("401s when unauthenticated", async () => {
     authMock.mockResolvedValue(null);
 
-    const res = await GET();
+    const res = await GET(getReq());
 
     expect(res.status).toBe(401);
     expect(prismaMock.auditLog.findMany).not.toHaveBeenCalled();
   });
 
-  it("403s for an Employee", async () => {
+  it("403s for an Employee, and requireUserType itself audit-logs the denial", async () => {
     authMock.mockResolvedValue(fakeSession({ userType: "EMPLOYEE" }));
 
-    const res = await GET();
+    const res = await GET(getReq());
 
     expect(res.status).toBe(403);
     expect(prismaMock.auditLog.findMany).not.toHaveBeenCalled();
-    expect(logAuditMock).not.toHaveBeenCalled();
+    expect(logAuditMock).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "ACCESS_DENIED", outcome: "DENIED" })
+    );
   });
 
   it("serves a downloadable CSV to an Admin", async () => {
     authMock.mockResolvedValue(fakeSession({ userType: "ADMIN" }));
 
-    const res = await GET();
+    const res = await GET(getReq());
 
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toBe("text/csv; charset=utf-8");
@@ -76,7 +84,7 @@ describe("GET /api/audit-log/export", () => {
   it("writes a header row and one row per log", async () => {
     authMock.mockResolvedValue(fakeSession({ userType: "ADMIN" }));
 
-    const lines = (await (await GET()).text()).split("\r\n");
+    const lines = (await (await GET(getReq())).text()).split("\r\n");
 
     expect(lines).toHaveLength(1 + LOGS.length);
     expect(lines[0]).toBe("Timestamp,User,Email,Action,Details");
@@ -98,7 +106,7 @@ describe("GET /api/audit-log/export", () => {
       },
     ]);
 
-    const lines = (await (await GET()).text()).split("\r\n");
+    const lines = (await (await GET(getReq())).text()).split("\r\n");
 
     expect(lines[1]).toBe(
       '2026-01-03T00:00:00.000Z,Ada Admin,ada@example.com,ROLE_UPDATED,"Renamed ""HR"" to ""People, EU"""'
@@ -108,12 +116,14 @@ describe("GET /api/audit-log/export", () => {
   it("audits the export itself", async () => {
     authMock.mockResolvedValue(fakeSession({ userType: "SUPERADMIN" }));
 
-    await GET();
+    await GET(getReq());
 
     expect(logAuditMock).toHaveBeenCalledWith(
-      "user-1",
-      "AUDIT_LOG_EXPORTED",
-      expect.stringContaining("2 audit log entries")
+      expect.objectContaining({
+        actorId: "user-1",
+        action: "AUDIT_LOG_EXPORTED",
+        details: expect.stringContaining("2 audit log entries"),
+      })
     );
   });
 });

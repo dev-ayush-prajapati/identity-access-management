@@ -16,7 +16,7 @@ const { authMock, prismaMock, logAuditMock } = vi.hoisted(() => ({
 
 vi.mock("@/auth", () => ({ auth: authMock }));
 vi.mock("@/lib/prisma", () => ({ prisma: prismaMock }));
-vi.mock("@/lib/audit", () => ({ logAudit: logAuditMock }));
+vi.mock("@/lib/audit", () => ({ logAudit: logAuditMock, requestMeta: () => ({}) }));
 
 import { GET, POST } from "./route";
 
@@ -82,6 +82,8 @@ describe("POST /api/roles", () => {
     const res = await POST(jsonRequest(URL_, "POST", { name: "HR" }));
 
     expect(res.status).toBe(201);
-    expect(logAuditMock).toHaveBeenCalledWith("user-1", "ROLE_CREATED", expect.stringContaining("HR"));
+    expect(logAuditMock).toHaveBeenCalledWith(
+      expect.objectContaining({ actorId: "user-1", action: "ROLE_CREATED", details: expect.stringContaining("HR") })
+    );
   });
 });

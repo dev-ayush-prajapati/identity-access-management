@@ -1,47 +1,24 @@
 import { Activity, Check, X, type LucideIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { actionVerb } from "@/lib/audit-query";
 import { cn } from "@/lib/utils";
 
-// Actions are stored as free-form strings (ROLE_CREATED, ACCESS_REVOKED,
-// AUDIT_LOG_EXPORTED, ...), never a DB enum — so everything here reads the
-// trailing verb instead of matching a fixed list. A new action shipped by a
-// future route renders as a neutral badge rather than crashing the log.
-export type AuditActionCategory = "created" | "updated" | "deleted" | "access" | "other";
-
-function verbOf(action: string): string {
-  const parts = action.split("_");
-  return (parts[parts.length - 1] ?? "").toUpperCase();
-}
-
-// Kept pure and separate from the badge: the explorer filters on this, and a
-// filter is worth being able to reason about without rendering anything.
-export function categorizeAction(action: string): AuditActionCategory {
-  switch (verbOf(action)) {
-    case "CREATED":
-      return "created";
-    case "UPDATED":
-      return "updated";
-    case "DELETED":
-      return "deleted";
-    case "GRANTED":
-    case "REVOKED":
-      return "access";
-    default:
-      return "other";
-  }
-}
-
+// Category (what a filter groups by) lives in lib/audit-query.ts, next to the
+// server-side filtering that uses it. A new action shipped by a future route
+// renders as a neutral badge rather than crashing the log.
 type ActionTone = "positive" | "destructive" | "neutral";
 
 // Tone and category are close but not the same axis: GRANTED and REVOKED are
 // both "access" to a filter, yet one adds permission and one takes it away.
 function toneOf(action: string): ActionTone {
-  switch (verbOf(action)) {
+  switch (actionVerb(action)) {
     case "CREATED":
     case "GRANTED":
       return "positive";
     case "DELETED":
+    case "ARCHIVED":
     case "REVOKED":
+    case "DENIED":
       return "destructive";
     default:
       return "neutral";

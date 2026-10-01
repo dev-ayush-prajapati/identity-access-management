@@ -28,7 +28,7 @@ below.
 | 1 | Revocation | ✅ Done, merged to `main` (PR #13), verified live in browser |
 | 2 | Real enforcement | ✅ Done, verified live in browser. The 404 was dev-server port drift, now fixed |
 | 3 | Joiner / mover / leaver | ✅ Done, verified live in browser |
-| 4 | Audit log that deserves the name | ⬜ Not started |
+| 4 | Audit log that deserves the name | 🟡 Structured fields, new events, server-side pagination all built and gate-verified — not yet clicked through live |
 | 5 | Keycloak done properly | ⬜ Not started |
 | 6 | Integrity + UI correctness | ⬜ Not started |
 | 7 | Presentation honesty | ⬜ Not started |
@@ -302,14 +302,100 @@ each check confirmed at the Postgres/Keycloak level too, not just the UI:**
   files (`reset-password`, `user-type`) and a new `lib/audit.test.ts` for the
   actor-snapshot behavior. 99 → 124 tests.
 
-## Phase 4 — Audit log that deserves the name ⬜
+## Phase 4 — Audit log that deserves the name 🟡
 
-Not started. `AuditLog` gains `targetType`, `targetId`, `metadata Json`, `ip`,
-`userAgent`, `outcome`; `logAudit` takes a structured argument instead of a free
-`details` string. Log `LOGIN_SUCCESS`, `LOGIN_DENIED`, `LOGOUT`, and
-`ACCESS_DENIED` (the `requireUserType` 403 path) — today there are zero
-authentication events logged despite the log claiming to cover logins. Real
-server-side pagination, replacing the client-side filter over a hard 100-row cap.
+**Branch:** `feat/structured-audit-log` (cut from `main` after the Phase 3 PR
+merged). Gate green (lint, `tsc --noEmit`, 134 tests, build); not yet clicked
+through live in a browser.
+
+**What shipped:**
+
+- **Structured fields** — `AuditLog` gained `targetType`, `targetId`,
+  `metadata Json?`, `outcome` (new `AuditOutcome` enum: `SUCCESS`/`DENIED`/
+  `FAILURE`, default `SUCCESS`), `ip`, `userAgent`. Migration
+  `20260920131906_audit_log_structured_fields`. `logAudit()`
+  (`lib/audit.ts`) changed from three positional args
+  `(userId, action, details?)` to one structured `AuditEntry` object —
+  `details` stays (still the human-readable line the UI/CSV show), the new
+  fields ride alongside it rather than replacing it. New `requestMeta(req)`
+  helper reads `x-forwarded-for`/`user-agent` off a request, best-effort only
+  (this app runs plain `next start` in dev, no real reverse proxy in front of
+  it, so `x-forwarded-for` is usually empty locally — would populate for real
+  behind an actual proxy in production). All 16 existing `logAudit` call
+  sites across every route updated to the new shape, each given a sensible
+  `targetType`/`targetId`/`metadata` for its own entity.
+- **New events, logged for the first time:**
+  - `LOGIN_SUCCESS` / `LOGIN_DENIED` — the branching logic that used to be
+    three lines inline in `auth.ts`'s `signIn` callback moved to a new
+    `lib/evaluate-sign-in.ts` (unit-tested on its own; NextAuth's callback
+    wiring itself stays manual-verification-only, same reasoning as
+    `middleware.ts`). Denied logins distinguish `no_account` (no actorId —
+    same pattern as `AUTHZ_DENIED`) from `disabled` in `metadata.reason`.
+  - `LOGOUT` — logged in `app/api/auth/federated-signout/route.ts` when the
+    session token carries a `userId`. This route had no test file at all
+    before now (a pre-existing gap predating this phase) — added one
+    alongside the new logging, including the Phase 0 GET-handler regression
+    check.
+  - `ACCESS_DENIED` — added inside `requireUserType()` itself
+    (`lib/api-auth.ts`), covering both 403 branches (disabled account, wrong
+    tier). Deliberately *not* the two 401 branches (no session / row
+    deleted) — no reliable actor to attribute, and logging every
+    unauthenticated hit would be noise, not signal. `ip`/`userAgent` aren't
+    attached to this one specifically — threading the request object through
+    every one of `requireUserType`'s ~20 call sites for one event type
+    wasn't worth the ripple.
+- **Badge/filter correctness fix, found while building this:**
+  `components/audit-log/action-badge.tsx`'s `categorizeAction`/`toneOf` only
+  recognized the verbs `CREATED`/`UPDATED`/`DELETED`/`GRANTED`/`REVOKED` — so
+  Phase 3's `EMPLOYEE_ARCHIVED` was falling into the neutral "other" bucket
+  instead of "deleted", and the new `_DENIED` actions (plus the
+  already-existing `AUTHZ_DENIED`) would have too. Fixed: `ARCHIVED` now
+  categorizes as "deleted", `DENIED` gets its own new "denied" category and a
+  destructive (red) tone, with a matching filter chip in
+  `audit-log-explorer.tsx`.
+- Test suite: new `lib/evaluate-sign-in.test.ts`, new
+  `app/api/auth/federated-signout/route.test.ts`, rewritten
+  `lib/audit.test.ts` for the structured shape, `lib/api-auth.test.ts`
+  extended to assert the two `ACCESS_DENIED` paths, plus mechanical updates
+  to every route test file's `logAudit` assertions. 124 → 134 tests.
+
+**Server-side pagination (2026-10-01)** — replaces the client-side filter
+over the hard 100-row cap, so search and filters now cover the whole log.
+Gate green (lint, `tsc --noEmit`, 154 tests, build — `/admin/audit` still
+`ƒ Dynamic`). **Not yet verified against a live database or in a browser**
+(Docker wasn't running that session).
+
+- The URL is the whole state: `/admin/audit?q=&category=&page=`. Filtered
+  views are linkable and survive a refresh; the back button works.
+- New `lib/audit-query.ts` (pure, unit-tested in `lib/audit-query.test.ts`):
+  parses/validates `searchParams` (unknown category → all, non-integer page →
+  1, search capped at 200 chars), builds the Prisma `where`, tallies chip
+  counts, clamps an out-of-range page to the last one, builds hrefs.
+  `categorizeAction` moved here from `action-badge.tsx` (only the explorer
+  used it); the badge imports `actionVerb` from it for its tone.
+- One `groupBy(action)` over the search-matching rows yields the chip counts,
+  the total for the current filter, *and* the exact action strings a
+  category filters on (`action IN (...)`) — so a chip's count and what
+  clicking it shows can't disagree, and there's no LIKE pattern
+  re-implementing `categorizeAction`'s verb rules. Then one `findMany`,
+  50 rows per page, ordered `createdAt desc, id desc` (id breaks ties so a
+  row can't flip between pages).
+- Search is case-insensitive over actor name/email, action, details, and the
+  live `user` relation (fallback for rows older than the actor snapshot).
+- `components/audit-log/audit-log-explorer.tsx` is now a Server Component:
+  search is a `next/form` GET form (submits on Enter, keeps the category,
+  resets to page 1), chips and Newer/Older are plain links.
+- Behavior changes worth knowing: search runs on Enter, not per keystroke;
+  chip counts now reflect the current search (faceted), not the whole log.
+- Known ceiling, marked `ponytail:` in `app/admin/audit/page.tsx`: offset
+  paging, so a new row written mid-browse shifts later pages by one. Switch
+  to a `(createdAt, id)` cursor if that ever matters.
+- Still open in this phase: the CSV export is the whole unfiltered log and
+  omits the structured fields — see `docs/review-findings.md` #7.
+
+Separate from this phase: a full codebase review on 2026-10-01 logged ten
+findings outside the existing phases (page-level revocation gap, archived
+users reappearing, and more) in `docs/review-findings.md`.
 
 ## Phase 5 — Keycloak done properly ⬜
 

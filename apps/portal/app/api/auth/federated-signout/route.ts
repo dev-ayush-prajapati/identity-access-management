@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getToken } from "next-auth/jwt";
 import { signOut } from "@/auth";
+import { logAudit, requestMeta } from "@/lib/audit";
 
 // Auth.js's default /api/auth/signout only clears our own session cookie.
 // Keycloak keeps its own SSO session alive, so the next sign-in would
@@ -20,6 +21,15 @@ export async function POST(request: NextRequest) {
     secret: process.env.AUTH_SECRET,
     cookieName: "portal-session-token",
   });
+
+  if (token?.userId) {
+    await logAudit({
+      actorId: token.userId as string,
+      action: "LOGOUT",
+      details: "Signed out",
+      ...requestMeta(request),
+    });
+  }
 
   await signOut({ redirect: false });
 

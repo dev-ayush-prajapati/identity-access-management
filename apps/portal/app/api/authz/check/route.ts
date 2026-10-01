@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
-import { logAudit } from "@/lib/audit";
+import { logAudit, requestMeta } from "@/lib/audit";
 
 // The policy decision point: any application that shares Keycloak identity
 // with this portal (currently just finance-app) calls this to ask "does
@@ -106,11 +106,14 @@ export async function POST(req: NextRequest) {
   const decision = await decide(keycloakId, origin);
 
   if (trigger === "signIn" && !decision.allow) {
-    await logAudit(
-      decision.userId,
-      "AUTHZ_DENIED",
-      `Denied sign-in to application at "${origin}" — ${decision.reason}`
-    );
+    await logAudit({
+      actorId: decision.userId,
+      action: "AUTHZ_DENIED",
+      details: `Denied sign-in to application at "${origin}" — ${decision.reason}`,
+      metadata: { origin, reason: decision.reason },
+      outcome: "DENIED",
+      ...requestMeta(req),
+    });
   }
 
   return NextResponse.json({ allow: decision.allow, reason: decision.reason });

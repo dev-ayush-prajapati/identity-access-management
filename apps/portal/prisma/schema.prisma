@@ -23,6 +23,12 @@ enum UserStatus {
   DISABLED
 }
 
+enum AuditOutcome {
+  SUCCESS
+  DENIED
+  FAILURE
+}
+
 model User {
   id           String     @id @default(cuid())
   keycloakId   String     @unique
@@ -84,7 +90,7 @@ model AuditLog {
   // this relation should in practice never actually need to null out — if
   // something ever does try to hard-delete a referenced User, that must fail
   // loudly instead of silently erasing who did what.
-  user       User?    @relation(fields: [userId], references: [id], onDelete: Restrict)
+  user       User?        @relation(fields: [userId], references: [id], onDelete: Restrict)
   userId     String?
   // Snapshot of the actor's name/email at write time, independent of the
   // `user` relation above — so a row stays human-readable even if the actor's
@@ -92,9 +98,19 @@ model AuditLog {
   actorName  String?
   actorEmail String?
   action     String
+  // Free-text summary, kept for the on-screen/CSV line — targetType/targetId/
+  // metadata below are the queryable, structured side of the same event.
   details    String?
-  createdAt  DateTime @default(now())
+  targetType String?
+  targetId   String?
+  metadata   Json?
+  outcome    AuditOutcome @default(SUCCESS)
+  ip         String?
+  userAgent  String?
+  createdAt  DateTime     @default(now())
 
   @@index([createdAt])
   @@index([userId])
+  @@index([action])
+  @@index([targetType, targetId])
 }
