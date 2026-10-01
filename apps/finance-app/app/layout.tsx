@@ -1,10 +1,14 @@
 import type { Metadata } from "next";
-import { Geist } from "next/font/google";
+import localFont from "next/font/local";
 import "./globals.css";
 
-const geistSans = Geist({
+// Vendored, not next/font/google: that loader fetches from Google at build
+// time, and Google intermittently answers with URLs it can't parse, failing
+// the build (vercel/next.js#99114). File + license: app/fonts/.
+const geistSans = localFont({
+  src: "./fonts/geist-latin.woff2",
   variable: "--font-geist-sans",
-  subsets: ["latin"],
+  weight: "100 900",
 });
 
 export const metadata: Metadata = {
