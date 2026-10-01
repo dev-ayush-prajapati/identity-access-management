@@ -1,19 +1,21 @@
-"use client";
-
-import { useMemo, useState } from "react";
-import { Search, SearchX } from "lucide-react";
-import { categorizeAction, type AuditActionCategory } from "@/components/audit-log/action-badge";
+import Form from "next/form";
+import Link from "next/link";
+import { ChevronLeft, ChevronRight, Search, SearchX } from "lucide-react";
 import { AuditLogTable, type AuditLogRow } from "@/components/audit-log/audit-log-table";
 import { EmptyState } from "@/components/common/empty-state";
-import { Button } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  AUDIT_PAGE_SIZE,
+  MAX_QUERY_LENGTH,
+  auditHref,
+  pageCount,
+  type AuditFilter,
+  type AuditQuery,
+} from "@/lib/audit-query";
 import { cn } from "@/lib/utils";
 
-type Filter = AuditActionCategory | "all";
-
-// "other" is intentionally not a chip: it exists so an unrecognized action
-// still lands in a bucket, but nobody would think to click it.
-const CHIPS: { value: Filter; label: string }[] = [
+const CHIPS: { value: AuditFilter; label: string }[] = [
   { value: "all", label: "All" },
   { value: "created", label: "Created" },
   { value: "updated", label: "Updated" },
@@ -23,85 +25,65 @@ const CHIPS: { value: Filter; label: string }[] = [
 ];
 
 interface AuditLogExplorerProps {
+  // Just the current page, already filtered server-side.
   logs: AuditLogRow[];
-  limit: number;
+  // `page` is already clamped to the real page range.
+  query: AuditQuery;
+  // Rows matching the full query, across every page.
+  total: number;
+  // Per-chip counts for the current search — so each chip says what clicking
+  // it would show.
+  counts: Record<AuditFilter, number>;
 }
 
-// Filtering happens entirely over the rows the page already handed down — the
-// query is capped at `limit` server-side, so narrowing it further costs nothing
-// and needs no second round trip.
-export function AuditLogExplorer({ logs, limit }: AuditLogExplorerProps) {
-  const [query, setQuery] = useState("");
-  const [filter, setFilter] = useState<Filter>("all");
-
-  const counts = useMemo(() => {
-    const tally: Record<Filter, number> = {
-      all: logs.length,
-      created: 0,
-      updated: 0,
-      deleted: 0,
-      access: 0,
-      denied: 0,
-      other: 0,
-    };
-    for (const log of logs) tally[categorizeAction(log.action)] += 1;
-    return tally;
-  }, [logs]);
-
-  const filtered = useMemo(() => {
-    const needle = query.trim().toLowerCase();
-    return logs.filter((log) => {
-      if (filter !== "all" && categorizeAction(log.action) !== filter) return false;
-      if (!needle) return true;
-      // Every field the row displays is searchable, so what you can read is
-      // what you can search for. Prefer the write-time snapshot, same as the
-      // table itself.
-      return [
-        log.actorName ?? log.user?.name,
-        log.actorEmail ?? log.user?.email,
-        log.action,
-        log.details,
-      ].some((field) => field?.toLowerCase().includes(needle));
-    });
-  }, [logs, query, filter]);
-
-  function clearFilters() {
-    setQuery("");
-    setFilter("all");
+// Server Component. Every control is a link or a plain GET form, so the URL is
+// the whole state: filtering and paging run over the entire log in Postgres,
+// not over whatever slice one page happened to load.
+export function AuditLogExplorer({ logs, query, total, counts }: AuditLogExplorerProps) {
+  // Nothing recorded at all — let the table make its own case for itself.
+  if (counts.all === 0 && !query.q) {
+    return <AuditLogTable logs={[]} limit={AUDIT_PAGE_SIZE} />;
   }
 
-  // Nothing to search through — let the table make its own case for itself.
-  if (logs.length === 0) {
-    return <AuditLogTable logs={logs} limit={limit} />;
-  }
+  const pages = pageCount(total);
+  const firstShown = total === 0 ? 0 : (query.page - 1) * AUDIT_PAGE_SIZE + 1;
+  const lastShown = Math.min(query.page * AUDIT_PAGE_SIZE, total);
 
   return (
     <div className="space-y-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="relative w-full sm:max-w-xs">
+        {/* Submits on Enter. A new search always starts back on page 1, but
+            keeps the picked category. */}
+        <Form action="/admin/audit" role="search" className="relative w-full sm:max-w-xs">
           <Search
             className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground"
             aria-hidden
           />
+          {/* Keyed on the query so the field resets when navigation changes
+              it (Clear filters, back button) — it's uncontrolled otherwise. */}
           <Input
+            key={query.q}
             type="search"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            name="q"
+            defaultValue={query.q}
+            maxLength={MAX_QUERY_LENGTH}
             placeholder="Search people, actions, details"
             aria-label="Search the audit log"
             className="pl-8"
           />
-        </div>
+          {query.category !== "all" && (
+            <input type="hidden" name="category" value={query.category} />
+          )}
+        </Form>
 
         <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Filter by action">
           {CHIPS.map((chip) => {
-            const active = filter === chip.value;
+            const active = query.category === chip.value;
             return (
-              <button
+              <Link
                 key={chip.value}
-                type="button"
-                aria-pressed={active}
-                onClick={() => setFilter(chip.value)}
+                href={auditHref({ q: query.q, category: chip.value, page: 1 })}
+                aria-current={active ? "true" : undefined}
                 className={cn(
                   "inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors outline-none focus-visible:ring-3 focus-visible:ring-ring/50",
                   active
@@ -118,31 +100,76 @@ export function AuditLogExplorer({ logs, limit }: AuditLogExplorerProps) {
                 >
                   {counts[chip.value]}
                 </span>
-              </button>
+              </Link>
             );
           })}
         </div>
       </div>
 
       <p className="text-xs text-muted-foreground" aria-live="polite">
-        Showing {filtered.length} of {logs.length} {logs.length === 1 ? "entry" : "entries"}.
-        {logs.length >= limit && ` Only the latest ${limit} are queried.`}
+        {total === 0
+          ? "No entries match."
+          : `Showing ${firstShown}–${lastShown} of ${total} ${total === 1 ? "entry" : "entries"}.`}
       </p>
 
-      {filtered.length === 0 ? (
+      {logs.length === 0 ? (
         <EmptyState
           icon={SearchX}
           title="No entries match"
-          description="Nothing in the entries loaded here matches that search and action filter."
+          description="Nothing in the audit log matches that search and action filter."
           action={
-            <Button type="button" variant="outline" size="sm" onClick={clearFilters}>
+            <Link href="/admin/audit" className={buttonVariants({ variant: "outline", size: "sm" })}>
               Clear filters
-            </Button>
+            </Link>
           }
         />
       ) : (
-        <AuditLogTable logs={filtered} limit={limit} showFooter={false} />
+        <AuditLogTable logs={logs} limit={AUDIT_PAGE_SIZE} showFooter={false} />
+      )}
+
+      {pages > 1 && (
+        <nav aria-label="Audit log pages" className="flex items-center justify-between gap-4">
+          <PageLink query={query} page={query.page - 1} disabled={query.page <= 1}>
+            <ChevronLeft aria-hidden />
+            Newer
+          </PageLink>
+          <p className="font-mono text-xs text-muted-foreground">
+            Page {query.page} of {pages}
+          </p>
+          <PageLink query={query} page={query.page + 1} disabled={query.page >= pages}>
+            Older
+            <ChevronRight aria-hidden />
+          </PageLink>
+        </nav>
       )}
     </div>
+  );
+}
+
+function PageLink({
+  query,
+  page,
+  disabled,
+  children,
+}: {
+  query: AuditQuery;
+  page: number;
+  disabled: boolean;
+  children: React.ReactNode;
+}) {
+  const className = buttonVariants({ variant: "outline", size: "sm" });
+  // A dead end isn't a link — render it inert rather than pointing at a page
+  // that doesn't exist.
+  if (disabled) {
+    return (
+      <span aria-disabled="true" className={cn(className, "pointer-events-none opacity-50")}>
+        {children}
+      </span>
+    );
+  }
+  return (
+    <Link href={auditHref({ ...query, page })} className={className}>
+      {children}
+    </Link>
   );
 }
