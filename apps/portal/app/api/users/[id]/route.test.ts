@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fakeSession, jsonRequest, paramsOf } from "@/test/helpers";
+import { fakeSession, jsonRequest, paramsOf, mockTransactions } from "@/test/helpers";
 
 const { authMock, prismaMock, userLookupMock, logAuditMock, deleteKeycloakUserMock, setKeycloakUserEnabledMock } =
   vi.hoisted(() => ({
@@ -58,6 +58,7 @@ const admin = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockTransactions(prismaMock);
   authMock.mockResolvedValue(fakeSession({ userType: "ADMIN" }));
   prismaMock.user.findUnique.mockImplementation(async (args: { where: { id: string } }) => {
     const session = await authMock();
@@ -163,7 +164,8 @@ describe("PATCH /api/users/[id]", () => {
         actorId: "admin-1",
         action: "EMPLOYEE_UPDATED",
         details: expect.stringContaining("Amy Smith"),
-      })
+      }),
+      prismaMock
     );
   });
 
@@ -187,7 +189,8 @@ describe("PATCH /api/users/[id]", () => {
         actorId: "boss-1",
         action: "ADMIN_UPDATED",
         details: expect.stringContaining("Bobby"),
-      })
+      }),
+      prismaMock
     );
   });
 
@@ -249,7 +252,8 @@ describe("PATCH /api/users/[id]", () => {
         actorId: "admin-1",
         action: "EMPLOYEE_DISABLED",
         details: expect.stringContaining("Amy"),
-      })
+      }),
+      prismaMock
     );
   });
 
@@ -268,6 +272,25 @@ describe("PATCH /api/users/[id]", () => {
     expect(prismaMock.user.update).toHaveBeenCalledWith(
       expect.objectContaining({ data: { status: "ACTIVE" } })
     );
+  });
+
+  // Keycloak is flipped before the transaction, so if the status change or
+  // its audit row can't be saved, Keycloak must be put back — otherwise the
+  // two systems disagree about whether the account can sign in.
+  it("restores Keycloak and 500s when the status change can't be saved with its audit row", async () => {
+    userLookupMock.mockResolvedValue({ ...employee, status: "ACTIVE" });
+    setKeycloakUserEnabledMock.mockResolvedValue(undefined);
+    prismaMock.user.update.mockResolvedValue({ ...employee, status: "DISABLED" });
+    logAuditMock.mockRejectedValueOnce(new Error("audit down"));
+
+    const res = await PATCH(
+      jsonRequest(URL_, "PATCH", { status: "DISABLED" }),
+      paramsOf("u1")
+    );
+
+    expect(res.status).toBe(500);
+    expect(setKeycloakUserEnabledMock).toHaveBeenNthCalledWith(1, "kc-456", false);
+    expect(setKeycloakUserEnabledMock).toHaveBeenNthCalledWith(2, "kc-456", true);
   });
 });
 
@@ -344,7 +367,20 @@ describe("DELETE /api/users/[id]", () => {
         actorId: "admin-1",
         action: "EMPLOYEE_ARCHIVED",
         details: expect.stringContaining("amy@x.com"),
-      })
+      }),
+      prismaMock
     );
+  });
+
+  it("500s with a retryable message when the archive can't be saved with its audit row", async () => {
+    userLookupMock.mockResolvedValue(employee);
+    deleteKeycloakUserMock.mockResolvedValue(undefined);
+    prismaMock.user.update.mockResolvedValue({ ...employee, archivedAt: new Date() });
+    logAuditMock.mockRejectedValueOnce(new Error("audit down"));
+
+    const res = await DELETE(jsonRequest(URL_, "DELETE"), paramsOf("u1"));
+
+    expect(res.status).toBe(500);
+    expect((await res.json()).error).toContain("try again");
   });
 });

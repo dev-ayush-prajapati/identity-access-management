@@ -1,5 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fakeSession, jsonRequest, paramsOf, mockLiveCallerFromSession, prismaError } from "@/test/helpers";
+import {
+  fakeSession,
+  jsonRequest,
+  paramsOf,
+  mockLiveCallerFromSession,
+  mockTransactions,
+  prismaError,
+} from "@/test/helpers";
 
 const { authMock, prismaMock, logAuditMock } = vi.hoisted(() => ({
   authMock: vi.fn(),
@@ -28,6 +35,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   authMock.mockResolvedValue(fakeSession({ userType: "ADMIN" }));
   mockLiveCallerFromSession(authMock, prismaMock.user.findUnique);
+  mockTransactions(prismaMock);
 });
 
 describe("PATCH /api/roles/[id]", () => {
@@ -61,6 +69,27 @@ describe("PATCH /api/roles/[id]", () => {
     expect(res.status).toBe(409);
     expect(data.error).toContain("already exists");
     expect(logAuditMock).not.toHaveBeenCalled();
+  });
+
+  it("renames the role and logs it in the same transaction", async () => {
+    prismaMock.role.update.mockResolvedValue({ id: "r1", name: "IT" });
+
+    const res = await PATCH(jsonRequest(URL_, "PATCH", { name: "IT" }), paramsOf("r1"));
+
+    expect(res.status).toBe(200);
+    expect(logAuditMock).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "ROLE_UPDATED", targetId: "r1" }),
+      prismaMock
+    );
+  });
+
+  it("fails the request (rolling the rename back) when the audit row can't be written", async () => {
+    prismaMock.role.update.mockResolvedValue({ id: "r1", name: "IT" });
+    logAuditMock.mockRejectedValueOnce(new Error("audit down"));
+
+    await expect(
+      PATCH(jsonRequest(URL_, "PATCH", { name: "IT" }), paramsOf("r1"))
+    ).rejects.toThrow("audit down");
   });
 
   it("doesn't disguise an unexpected database error as 404", async () => {
@@ -115,7 +144,8 @@ describe("DELETE /api/roles/[id]", () => {
 
     expect(res.status).toBe(200);
     expect(logAuditMock).toHaveBeenCalledWith(
-      expect.objectContaining({ actorId: "user-1", action: "ROLE_DELETED", details: expect.stringContaining("HR") })
+      expect.objectContaining({ actorId: "user-1", action: "ROLE_DELETED", details: expect.stringContaining("HR") }),
+      prismaMock
     );
   });
 

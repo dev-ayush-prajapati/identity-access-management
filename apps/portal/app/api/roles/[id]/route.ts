@@ -19,9 +19,25 @@ export async function PATCH(
     return NextResponse.json({ error: "name is required" }, { status: 400 });
   }
 
+  // The rename and its audit row commit together or not at all.
   let role;
   try {
-    role = await prisma.role.update({ where: { id }, data: { name } });
+    role = await prisma.$transaction(async (tx) => {
+      const updated = await tx.role.update({ where: { id }, data: { name } });
+      await logAudit(
+        {
+          actorId: session.user.id,
+          action: "ROLE_UPDATED",
+          details: `Renamed role to "${name}"`,
+          targetType: "Role",
+          targetId: id,
+          metadata: { name },
+          ...requestMeta(req),
+        },
+        tx
+      );
+      return updated;
+    });
   } catch (err) {
     const code = prismaErrorCode(err);
     if (code === "P2025") {
@@ -34,16 +50,6 @@ export async function PATCH(
     }
     throw err;
   }
-
-  await logAudit({
-    actorId: session.user.id,
-    action: "ROLE_UPDATED",
-    details: `Renamed role to "${name}"`,
-    targetType: "Role",
-    targetId: id,
-    metadata: { name },
-    ...requestMeta(req),
-  });
 
   return NextResponse.json(role);
 }
@@ -69,21 +75,29 @@ export async function DELETE(
     );
   }
 
-  const role = await prisma.role.delete({ where: { id } }).catch(nullIfNotFound);
+  // The delete and its audit row commit together or not at all.
+  const role = await prisma.$transaction(async (tx) => {
+    const deleted = await tx.role.delete({ where: { id } }).catch(nullIfNotFound);
+    if (deleted) {
+      await logAudit(
+        {
+          actorId: session.user.id,
+          action: "ROLE_DELETED",
+          details: `Deleted role "${deleted.name}"`,
+          targetType: "Role",
+          targetId: id,
+          metadata: { name: deleted.name },
+          ...requestMeta(req),
+        },
+        tx
+      );
+    }
+    return deleted;
+  });
 
   if (!role) {
     return NextResponse.json({ error: "Role not found" }, { status: 404 });
   }
-
-  await logAudit({
-    actorId: session.user.id,
-    action: "ROLE_DELETED",
-    details: `Deleted role "${role.name}"`,
-    targetType: "Role",
-    targetId: id,
-    metadata: { name: role.name },
-    ...requestMeta(req),
-  });
 
   return NextResponse.json({ success: true });
 }

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fakeSession, jsonRequest, paramsOf, mockLiveCallerFromSession, prismaError } from "@/test/helpers";
+import { fakeSession, jsonRequest, paramsOf, mockLiveCallerFromSession, prismaError, mockTransactions } from "@/test/helpers";
 
 const { authMock, prismaMock, logAuditMock } = vi.hoisted(() => ({
   authMock: vi.fn(),
@@ -26,6 +26,7 @@ const URL_ = "http://localhost:3000/api/applications/a1";
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockTransactions(prismaMock);
   authMock.mockResolvedValue(fakeSession({ userType: "SUPERADMIN" }));
   prismaMock.roleAccess.count.mockResolvedValue(0);
   mockLiveCallerFromSession(authMock, prismaMock.user.findUnique);
@@ -94,7 +95,8 @@ describe("PATCH /api/applications/[id]", () => {
         actorId: "user-1",
         action: "APPLICATION_UPDATED",
         details: expect.stringContaining("New"),
-      })
+      }),
+      prismaMock
     );
   });
 });
@@ -139,7 +141,8 @@ describe("DELETE /api/applications/[id]", () => {
         actorId: "user-1",
         action: "APPLICATION_DELETED",
         details: expect.stringContaining("Finance"),
-      })
+      }),
+      prismaMock
     );
   });
 });

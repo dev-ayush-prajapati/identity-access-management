@@ -23,8 +23,8 @@ problem.
 | 3 | A role becomes undeletable once an archived user held it | Medium | ✅ Fixed, verified live 2026-10-04 (`fix/review-findings`) |
 | 4 | finance-app fails open on a session with no `keycloakId` | Medium | ✅ Fixed (`fix/review-findings`) — code-verified only; needs a pre-Phase-2 cookie to reproduce by hand |
 | 5 | Portal sign-out doesn't end the finance-app session (page claims it does) | Medium | 🟡 False claim removed (verified live 2026-10-04); real single logout still open |
-| 6 | Audit writes aren't atomic with the mutation they record | Medium | ⬜ Open |
-| 7 | CSV export allows formula injection; omits Phase 4 fields | Low–Med | ⬜ Open |
+| 6 | Audit writes aren't atomic with the mutation they record | Medium | ✅ Fixed, verified live 2026-10-04 + real-DB rollback proven (`feat/audit-atomic-export`) |
+| 7 | CSV export allows formula injection; omits Phase 4 fields | Low–Med | ✅ Fixed, verified live in Excel 2026-10-04 (`feat/audit-atomic-export`) |
 | 8 | Renaming to a duplicate name returns 404 "not found" | Low | ✅ Fixed, verified live 2026-10-04 (`fix/review-findings`) |
 | 9 | PDP trusts a self-reported origin + one shared secret | Design | ⬜ Open (fits Phase 5) |
 | 10 | Minor hardening: unguarded `req.json()`, no security headers, no Origin check | Low | ⬜ Open |
@@ -92,6 +92,48 @@ stale and 404'd `/api/auth/*` until `.next` was cleared.
   throwaway route confirmed `P2002` in the live dev server. The client side
   of the same failure (`roles-manager` calling `res.json()` on an empty body
   and crashing instead of toasting) is Phase 6's manager error-handling item.
+
+### Fix log — `feat/audit-atomic-export` (2026-10-04)
+
+Gate green: portal lint, `tsc --noEmit`, 199 tests (187 → 199), build.
+
+**Verified live in the browser 2026-10-04:** a role create, a matrix
+grant/revoke, an employee disable/enable, and a role delete each produced
+their audit row, attributed to the acting Admin (#6). For #7, an Admin renamed
+to `=HYPERLINK("https://example.com","click me")` produced a CSV whose User
+cells all carried the `'` prefix; Excel itself (checked via automation on a
+read-only copy) reported 0 formulas and 0 hyperlinks. The one cell that did
+open `example.com` had its `'` deleted by hand in Excel before saving — the
+exact attack the prefix prevents — which also surfaced the leading-whitespace
+hardening below. New 11-column layout confirmed in the downloaded file.
+
+- **#6** — `logAudit(entry, tx?)`: an optional transaction client carries both
+  the actor lookup and the insert. All 12 audit writes that record a change
+  (roles, applications, access matrix, user create/edit/status/archive/
+  user-type) now run inside `prisma.$transaction` with the change, so they
+  commit together or not at all. Keycloak stays first where it was first:
+  - user **create** — the existing Keycloak rollback now also covers an
+    audit failure;
+  - user **enable/disable** — new compensating action: a failed transaction
+    restores Keycloak's previous enabled state, 500 with a clear message;
+  - user **archive** — a deleted Keycloak login can't be restored, so a
+    failed transaction returns a retryable 500 (the retry heals it:
+    `deleteKeycloakUser` treats 404 as done).
+
+  Route tests assert `logAudit` received the transaction and that an audit
+  failure fails the request; mocks can't model rollback itself, so a
+  throwaway script proved it against the real database through the PrismaPg
+  adapter (role + audit row inside a transaction, forced failure → neither
+  row left behind). Not wrapped, deliberately: sign-in/out, denials, export,
+  and password reset — they change no rows to bind to.
+- **#7** — `csvField` prefixes `'` to anything starting with `= + - @`, tab,
+  or CR (OWASP CSV-injection mitigation), *then* RFC 4180-quotes. Hardened
+  during the browser pass: a downloaded file edited by hand (`'` replaced
+  with a space) still ran `" =HYPERLINK(...)"` in Excel, so leading whitespace
+  before `= + - @` is caught too — names are trimmed on write, but the
+  User-Agent column is whatever the client sent. The export
+  gains Outcome, Target Type, Target ID, Metadata (JSON), IP, User Agent —
+  appended after the original five columns so the old layout still reads.
 
 ---
 

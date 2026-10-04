@@ -26,12 +26,17 @@ export interface AuditEntry {
 // stays human-readable by name even if that user's name changes later, or
 // (belt-and-suspenders) the relation itself is ever missing. One extra
 // indexed lookup per audit write, negligible at this scale.
-export async function logAudit(entry: AuditEntry) {
+//
+// A route recording a change passes its transaction as `db`, so the change
+// and its audit row commit together or not at all — the log can never be
+// missing a change that happened. Events that change nothing (sign-in,
+// denials, export) use the default client.
+export async function logAudit(entry: AuditEntry, db: Prisma.TransactionClient = prisma) {
   const actor = entry.actorId
-    ? await prisma.user.findUnique({ where: { id: entry.actorId }, select: { name: true, email: true } })
+    ? await db.user.findUnique({ where: { id: entry.actorId }, select: { name: true, email: true } })
     : null;
 
-  await prisma.auditLog.create({
+  await db.auditLog.create({
     data: {
       userId: entry.actorId,
       actorName: actor?.name ?? null,

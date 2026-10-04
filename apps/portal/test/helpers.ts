@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import type { Session } from "next-auth";
-import type { Mock } from "vitest";
+import { vi, type Mock } from "vitest";
 import { Prisma, type UserType } from "@/lib/generated/prisma";
 
 // The error Prisma throws for a known failure — e.g. "P2002" (unique
@@ -66,5 +66,17 @@ export function mockLiveCallerFromSession(authMock: Mock, findUniqueMock: Mock):
     const session = (await authMock()) as Session | null;
     if (!session?.user) return null;
     return { userType: session.user.userType, roleId: session.user.roleId, status: "ACTIVE" };
+  });
+}
+
+// Interactive transactions on a mocked Prisma client: `$transaction(fn)` runs
+// `fn` against the same mock, so a route's `tx.role.create(...)` hits the
+// model mocks the test already set up. A route that hands `tx` on to
+// logAudit — so the change and its audit row commit together — can then be
+// checked with `toHaveBeenCalledWith(entry, prismaMock)`. (Rollback itself is
+// the database's job and isn't simulated here.)
+export function mockTransactions<T extends object>(prismaMock: T): void {
+  Object.assign(prismaMock, {
+    $transaction: vi.fn(async (fn: (tx: T) => unknown) => fn(prismaMock)),
   });
 }

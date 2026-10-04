@@ -27,16 +27,22 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "A role with this name already exists" }, { status: 409 });
   }
 
-  const role = await prisma.role.create({ data: { name } });
-
-  await logAudit({
-    actorId: session.user.id,
-    action: "ROLE_CREATED",
-    details: `Created role "${name}"`,
-    targetType: "Role",
-    targetId: role.id,
-    metadata: { name },
-    ...requestMeta(req),
+  // The role and its audit row commit together or not at all.
+  const role = await prisma.$transaction(async (tx) => {
+    const created = await tx.role.create({ data: { name } });
+    await logAudit(
+      {
+        actorId: session.user.id,
+        action: "ROLE_CREATED",
+        details: `Created role "${name}"`,
+        targetType: "Role",
+        targetId: created.id,
+        metadata: { name },
+        ...requestMeta(req),
+      },
+      tx
+    );
+    return created;
   });
 
   return NextResponse.json(role, { status: 201 });

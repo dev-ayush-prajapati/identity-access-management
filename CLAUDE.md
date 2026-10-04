@@ -104,7 +104,7 @@ Sign-out goes through `app/api/auth/federated-signout/route.ts` (**POST-only**, 
 
 Hiding a nav link is never authorization. Direct URL navigation and direct API calls must both be blocked. Neither layer may trust the session JWT's `userType`/`roleId`/status — both read the row live.
 
-Every mutation writes an audit row via `logAudit(userId, ACTION, details)` from `@/lib/audit`.
+Every mutation writes an audit row via `logAudit(entry, tx)` from `@/lib/audit` **inside the same transaction** as the change — `prisma.$transaction(async (tx) => { …write with tx…; await logAudit({ actorId, action, details, targetType, targetId, metadata, ...requestMeta(req) }, tx); })` — so the change and its audit row commit together or not at all. If an external call (Keycloak) already happened before the transaction, a failed transaction must undo it (see `users/[id]` status). Events that change nothing (sign-in, denials, export) call `logAudit(entry)` without `tx`.
 
 ### Server Components that read Prisma
 
