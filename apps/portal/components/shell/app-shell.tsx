@@ -89,7 +89,10 @@ export async function AppShell({ zoneLabel, nav, children }: AppShellProps) {
           </div>
         </header>
 
-        <main className="mx-auto w-full max-w-5xl flex-1 p-6 md:p-8">{children}</main>
+        {/* Fills the space beside the sidebar, no centered max-width column —
+            the tables, matrix, and charts use the room, and wide screens don't
+            get empty bands down both sides. */}
+        <main className="w-full min-w-0 flex-1 p-6 md:p-8">{children}</main>
       </div>
     </div>
   );
