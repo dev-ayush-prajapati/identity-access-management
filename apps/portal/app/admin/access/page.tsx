@@ -1,5 +1,6 @@
 import { Info } from "lucide-react";
 import { prisma } from "@/lib/prisma";
+import { requirePageUser } from "@/lib/page-auth";
 import { AccessMatrix } from "@/components/access-matrix/access-matrix";
 import { PageHeader } from "@/components/shell/page-header";
 
@@ -8,6 +9,8 @@ import { PageHeader } from "@/components/shell/page-header";
 export const dynamic = "force-dynamic";
 
 export default async function AdminAccessPage() {
+  await requirePageUser("ADMIN");
+
   const [roles, applications, access] = await Promise.all([
     prisma.role.findMany({ orderBy: { createdAt: "asc" } }),
     prisma.application.findMany({ orderBy: { createdAt: "asc" } }),

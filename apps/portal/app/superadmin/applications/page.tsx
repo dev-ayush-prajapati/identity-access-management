@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { requirePageUser } from "@/lib/page-auth";
 import { ApplicationsManager } from "@/components/applications/applications-manager";
 import { PageHeader } from "@/components/shell/page-header";
 
@@ -7,6 +8,8 @@ import { PageHeader } from "@/components/shell/page-header";
 export const dynamic = "force-dynamic";
 
 export default async function SuperAdminApplicationsPage() {
+  await requirePageUser("SUPERADMIN");
+
   const applications = await prisma.application.findMany({
     orderBy: { createdAt: "asc" },
   });

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireUserType } from "@/lib/api-auth";
 import { logAudit, requestMeta } from "@/lib/audit";
+import { nullIfNotFound, prismaErrorCode } from "@/lib/prisma-errors";
 
 export async function PATCH(
   req: NextRequest,
@@ -18,10 +19,20 @@ export async function PATCH(
     return NextResponse.json({ error: "name is required" }, { status: 400 });
   }
 
-  const role = await prisma.role.update({ where: { id }, data: { name } }).catch(() => null);
-
-  if (!role) {
-    return NextResponse.json({ error: "Role not found" }, { status: 404 });
+  let role;
+  try {
+    role = await prisma.role.update({ where: { id }, data: { name } });
+  } catch (err) {
+    const code = prismaErrorCode(err);
+    if (code === "P2025") {
+      return NextResponse.json({ error: "Role not found" }, { status: 404 });
+    }
+    // Same answer POST gives — the unique index on Role.name is the check, so
+    // there's no read-then-write race to lose.
+    if (code === "P2002") {
+      return NextResponse.json({ error: "A role with this name already exists" }, { status: 409 });
+    }
+    throw err;
   }
 
   await logAudit({
@@ -45,7 +56,10 @@ export async function DELETE(
   if (error) return error;
   const { id } = await params;
 
-  const usersWithRole = await prisma.user.count({ where: { roleId: id } });
+  // Archived users keep their roleId (the row survives for audit history) but
+  // can't be seen or reassigned, so counting them would block this forever.
+  // Deleting the role nulls their roleId via the FK's default SetNull.
+  const usersWithRole = await prisma.user.count({ where: { roleId: id, archivedAt: null } });
   if (usersWithRole > 0) {
     return NextResponse.json(
       {
@@ -55,7 +69,7 @@ export async function DELETE(
     );
   }
 
-  const role = await prisma.role.delete({ where: { id } }).catch(() => null);
+  const role = await prisma.role.delete({ where: { id } }).catch(nullIfNotFound);
 
   if (!role) {
     return NextResponse.json({ error: "Role not found" }, { status: 404 });

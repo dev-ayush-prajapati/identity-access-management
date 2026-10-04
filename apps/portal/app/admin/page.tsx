@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { AppWindow, Grid3x3, Shield, Users } from "lucide-react";
 import { prisma } from "@/lib/prisma";
+import { requirePageUser } from "@/lib/page-auth";
 import { AuditLogTable } from "@/components/audit-log/audit-log-table";
 import { PageHeader } from "@/components/shell/page-header";
 import { StatCard } from "@/components/stats/stat-card";
@@ -29,6 +30,8 @@ const RECENT_ACTIVITY_LIMIT = 5;
 const EMPLOYEES_PREVIEW_LIMIT = 6;
 
 export default async function AdminOverviewPage() {
+  await requirePageUser("ADMIN");
+
   const [
     roleCount,
     employeeCount,
@@ -42,7 +45,10 @@ export default async function AdminOverviewPage() {
     employeeGrowthSource,
   ] = await Promise.all([
     prisma.role.count(),
-    prisma.user.count({ where: { userType: "EMPLOYEE" } }),
+    // Archived employees are kept only for audit history — they're not part
+    // of the current directory, the preview, or the per-role headcount. The
+    // growth chart below still counts them: it plots when people joined.
+    prisma.user.count({ where: { userType: "EMPLOYEE", archivedAt: null } }),
     prisma.application.count(),
     prisma.roleAccess.count(),
     prisma.auditLog.findMany({
@@ -57,13 +63,13 @@ export default async function AdminOverviewPage() {
       select: { createdAt: true },
     }),
     prisma.user.findMany({
-      where: { userType: "EMPLOYEE" },
+      where: { userType: "EMPLOYEE", archivedAt: null },
       include: { role: true },
       orderBy: { createdAt: "desc" },
       take: EMPLOYEES_PREVIEW_LIMIT,
     }),
     prisma.role.findMany({
-      include: { _count: { select: { users: true } } },
+      include: { _count: { select: { users: { where: { archivedAt: null } } } } },
       orderBy: { createdAt: "asc" },
     }),
     prisma.application.findMany({

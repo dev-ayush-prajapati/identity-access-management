@@ -1,4 +1,6 @@
 import { prisma } from "@/lib/prisma";
+import { requirePageUser } from "@/lib/page-auth";
+import { listManagedUsers } from "@/lib/users";
 import { UsersManager } from "@/components/users/users-manager";
 import { PageHeader } from "@/components/shell/page-header";
 
@@ -7,14 +9,12 @@ import { PageHeader } from "@/components/shell/page-header";
 export const dynamic = "force-dynamic";
 
 export default async function AdminEmployeesPage() {
+  await requirePageUser("ADMIN");
+
   // Roles are needed for the role picker in the create/edit dialog, not just
   // for display.
   const [employees, roles] = await Promise.all([
-    prisma.user.findMany({
-      where: { userType: "EMPLOYEE" },
-      include: { role: true },
-      orderBy: { createdAt: "asc" },
-    }),
+    listManagedUsers("EMPLOYEE"),
     prisma.role.findMany({ orderBy: { createdAt: "asc" } }),
   ]);
 

@@ -18,16 +18,80 @@ problem.
 
 | # | Finding | Severity | Status |
 |---|---|---|---|
-| 1 | Admin/SuperAdmin pages bypass revocation | High | ⬜ Open |
-| 2 | Archived users reappear on page refresh | High | ⬜ Open |
-| 3 | A role becomes undeletable once an archived user held it | Medium | ⬜ Open |
-| 4 | finance-app fails open on a session with no `keycloakId` | Medium | ⬜ Open |
-| 5 | Portal sign-out doesn't end the finance-app session (page claims it does) | Medium | ⬜ Open |
+| 1 | Admin/SuperAdmin pages bypass revocation | High | ✅ Fixed, verified live 2026-10-04 (`fix/review-findings`) |
+| 2 | Archived users reappear on page refresh | High | ✅ Fixed, verified live 2026-10-04 (`fix/review-findings`) |
+| 3 | A role becomes undeletable once an archived user held it | Medium | ✅ Fixed, verified live 2026-10-04 (`fix/review-findings`) |
+| 4 | finance-app fails open on a session with no `keycloakId` | Medium | ✅ Fixed (`fix/review-findings`) — code-verified only; needs a pre-Phase-2 cookie to reproduce by hand |
+| 5 | Portal sign-out doesn't end the finance-app session (page claims it does) | Medium | 🟡 False claim removed (verified live 2026-10-04); real single logout still open |
 | 6 | Audit writes aren't atomic with the mutation they record | Medium | ⬜ Open |
 | 7 | CSV export allows formula injection; omits Phase 4 fields | Low–Med | ⬜ Open |
-| 8 | Renaming to a duplicate name returns 404 "not found" | Low | ⬜ Open |
+| 8 | Renaming to a duplicate name returns 404 "not found" | Low | ✅ Fixed, verified live 2026-10-04 (`fix/review-findings`) |
 | 9 | PDP trusts a self-reported origin + one shared secret | Design | ⬜ Open (fits Phase 5) |
 | 10 | Minor hardening: unguarded `req.json()`, no security headers, no Origin check | Low | ⬜ Open |
+| 11 | New users are forced to invent a Keycloak last name; finance-app shows it | Low | ⬜ Open (found 2026-10-04 browser pass) |
+
+### Fix log — `fix/review-findings` (2026-10-02)
+
+Gate green: portal lint, `tsc --noEmit`, 187 tests (154 → 187), build;
+finance-app lint, `tsc --noEmit`, build.
+
+**Verified live in the browser 2026-10-04**, two browser profiles (normal +
+incognito), seeded Northwind data: disabling a signed-in Admin bounced their
+next page load to `/` and wrote `ACCESS_DENIED` rows (#1); promoting a
+signed-in Admin landed them on `/superadmin` with no redirect loop (#1); an
+Employee typing `/admin` or `/superadmin` went straight to `/dashboard`, and a
+signed-out `/admin` went to sign-in (#1); a deleted employee stayed gone after
+refresh and the overview count followed (#2); a role an archived user had held
+deleted cleanly (#3); a duplicate role rename showed "already exists" after the
+`instanceof` fix below (#8); finance-app showed the corrected text and still
+locked out a revoked Employee live (#5). Same session also passed the Phase 4
+pagination checklist.
+
+Setup snags on the way, environment not code: the local DB was three
+migrations behind (applied with `migrate deploy`); both `.env` files predated
+Phase 2's `AUTHZ_SERVICE_SECRET` (the PDP correctly failed closed with 500
+"Service not configured" until it was added); finance-app's dev cache went
+stale and 404'd `/api/auth/*` until `.next` was cleared.
+
+- **#1** — new `lib/page-auth.ts`: `requirePageUser(zone)` re-reads the user
+  from Postgres each request (`getLiveUser`, cached per request with React
+  `cache()`), redirects a disabled/archived account to `/` (audit-logged as
+  `ACCESS_DENIED`) and a wrong-zone user to their own zone. Called first in
+  all 10 zone pages, and in the 4 zone layouts so not even the shell renders
+  for someone who can't enter (request-cached: one query, one log). **Design change:** `middleware.ts` now checks only that a
+  session exists — a zone check on the stale JWT would have redirect-looped
+  against the live check for anyone promoted/demoted since sign-in (page says
+  "go to /superadmin", middleware's token says "you're ADMIN, go to /"). `/`,
+  `/sign-in`, `AppShell`, and `/profile`'s layout route/label by the live row
+  too. `lib/page-auth.test.ts` unit-tests the decision and statically fails if
+  any zone page doesn't call the guard. `CLAUDE.md`'s authorization section
+  updated to match. Behavior change: a disabled Employee is now redirected out
+  of `/dashboard` (previously shown the "No role assigned yet" empty state).
+- **#2** — new `lib/users.ts` `listManagedUsers()` is the one query behind
+  `GET /api/users`, `/admin/employees`, and `/superadmin/admins`. Overview
+  counts, the employees preview, and per-role headcount exclude archived
+  users; the weekly growth chart still counts them (it plots joiners).
+- **#3** — role delete counts only non-archived holders; the FK's default
+  `SetNull` clears archived users' `roleId`. **Phase 6 must keep that** — if it
+  changes `User.roleId` to `Restrict`, archive must clear `roleId` first or
+  this bug comes back.
+- **#4** — finance-app middleware sends a session with no `keycloakId` back
+  through sign-in instead of letting it through unchecked.
+- **#5** — finance-app's "signing out of the portal ends it in both places"
+  replaced with what's true (access is re-checked on every visit). Real
+  single logout (OIDC back-channel) is still open.
+- **#8** — new `lib/prisma-errors.ts`: role/application rename maps P2002 →
+  409, P2025 → 404, and rethrows anything else (a DB outage is a 500 again,
+  not "not found"). Delete uses `.catch(nullIfNotFound)` the same way.
+  **Bug caught in the browser pass:** the first version used
+  `instanceof Prisma.PrismaClientKnownRequestError`, which is silently
+  `false` inside Next.js (Prisma's runtime loads as two copies there), so a
+  duplicate rename fell through to an empty 500 — while the unit tests and a
+  plain-Node probe, each with one copy, passed. Now matched by error `name` +
+  `code`; `lib/prisma-errors.test.ts` covers the two-copies case, and a
+  throwaway route confirmed `P2002` in the live dev server. The client side
+  of the same failure (`roles-manager` calling `res.json()` on an empty body
+  and crashing instead of toasting) is Phase 6's manager error-handling item.
 
 ---
 
@@ -194,6 +258,25 @@ Fits naturally alongside Phase 5's service-account work.
 - Last-SuperAdmin guard (`users/[id]/user-type/route.ts`) is a read-then-write
   count with no lock — two concurrent demotions could both pass. Negligible
   at this scale.
+
+## 11. New users are forced to invent a Keycloak last name — Low
+
+**Where:** `lib/keycloak-admin.ts` `createKeycloakUser` (sets `firstName: name`,
+no `lastName`); `keycloak/realm-export.json` (default Keycloak 26 user
+profile, where last name is required).
+
+Found in the 2026-10-04 browser pass: finance-app showed a seeded Employee as
+"Rohan Mehta Admin". Keycloak held `firstName: "Rohan Mehta"`,
+`lastName: "Admin"` — on first sign-in Keycloak's "update account information"
+step demanded the missing last name and whatever was typed was kept. The
+portal shows `User.name` from Postgres; finance-app shows Keycloak's profile
+name — so the two apps disagree about who someone is, and every new user hits
+an unexplained extra form at first login.
+
+**Fix options:** split the name into first/last when creating the Keycloak
+user, or make `lastName` optional in the realm's user profile
+(`realm-export.json`) so Keycloak stops asking. Existing users' bogus last
+names need clearing either way.
 
 ---
 

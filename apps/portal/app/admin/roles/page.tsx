@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { requirePageUser } from "@/lib/page-auth";
 import { RolesManager } from "@/components/roles/roles-manager";
 import { PageHeader } from "@/components/shell/page-header";
 
@@ -7,6 +8,8 @@ import { PageHeader } from "@/components/shell/page-header";
 export const dynamic = "force-dynamic";
 
 export default async function AdminRolesPage() {
+  await requirePageUser("ADMIN");
+
   const roles = await prisma.role.findMany({ orderBy: { createdAt: "asc" } });
 
   return (

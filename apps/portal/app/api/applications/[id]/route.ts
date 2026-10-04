@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { requireUserType } from "@/lib/api-auth";
 import { logAudit, requestMeta } from "@/lib/audit";
 import { isHttpUrl } from "@/lib/validate-url";
+import { nullIfNotFound, prismaErrorCode } from "@/lib/prisma-errors";
 
 export async function PATCH(
   req: NextRequest,
@@ -26,12 +27,23 @@ export async function PATCH(
     return NextResponse.json({ error: "url must be a valid http(s) URL" }, { status: 400 });
   }
 
-  const application = await prisma.application
-    .update({ where: { id }, data })
-    .catch(() => null);
-
-  if (!application) {
-    return NextResponse.json({ error: "Application not found" }, { status: 404 });
+  let application;
+  try {
+    application = await prisma.application.update({ where: { id }, data });
+  } catch (err) {
+    const code = prismaErrorCode(err);
+    if (code === "P2025") {
+      return NextResponse.json({ error: "Application not found" }, { status: 404 });
+    }
+    // Same answer POST gives — the unique index on Application.name is the
+    // check, so there's no read-then-write race to lose.
+    if (code === "P2002") {
+      return NextResponse.json(
+        { error: "An application with this name already exists" },
+        { status: 409 }
+      );
+    }
+    throw err;
   }
 
   await logAudit({
@@ -65,7 +77,7 @@ export async function DELETE(
     );
   }
 
-  const application = await prisma.application.delete({ where: { id } }).catch(() => null);
+  const application = await prisma.application.delete({ where: { id } }).catch(nullIfNotFound);
 
   if (!application) {
     return NextResponse.json({ error: "Application not found" }, { status: 404 });

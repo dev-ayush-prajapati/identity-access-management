@@ -97,10 +97,12 @@ Sign-out goes through `app/api/auth/federated-signout/route.ts` (**POST-only**, 
 
 ### Authorization is enforced in two independent places
 
-1. **Pages** — `middleware.ts`, via the `ZONE_PREFIXES` table (`/superadmin`→SUPERADMIN, `/admin`→ADMIN, `/dashboard`→EMPLOYEE, plus `/profile` for any logged-in user). Adding a protected page means updating both that table (if zoned) and `config.matcher`.
+1. **Pages** — `await requirePageUser(zone)` from `@/lib/page-auth` as the first line of every zone page (`/superadmin`→`"SUPERADMIN"`, `/admin`→`"ADMIN"`, `/dashboard`→`"EMPLOYEE"`, `/profile`→`"ANY"`). It re-reads the user from Postgres each request and redirects a disabled/archived account to `/`, a wrong-zone user to their own zone. `lib/page-auth.test.ts` fails if a zone page doesn't call it. The zone `layout.tsx` calls it too (so not even the shell renders for someone who can't enter), but the **page** call is the one that counts — layouts don't re-run on soft navigation between sibling pages. It's request-cached on `zone`, so both calls cost one query and log a denial once.
+   - `middleware.ts` only checks that a session **exists** (sends signed-out visitors to Keycloak). It must **not** check zones: it only sees the session JWT, whose `userType`/`status` are frozen at sign-in — a zone check there keeps a disabled user in, and redirect-loops against `requirePageUser` for anyone promoted/demoted since sign-in. Adding a new zone means adding its prefix to `config.matcher` and to the test's zone table.
+   - Anything that routes or labels by account type (`app/page.tsx`, `/sign-in`, `AppShell`, `/profile`'s layout) reads `getLiveUser()` (request-cached), never `session.user.userType`.
 2. **API routes** — `requireUserType([...])` from `@/lib/api-auth` at the top of every handler. The middleware matcher does **not** cover `/api/*`; routes gate themselves.
 
-Hiding a nav link is never authorization. Direct URL navigation and direct API calls must both be blocked.
+Hiding a nav link is never authorization. Direct URL navigation and direct API calls must both be blocked. Neither layer may trust the session JWT's `userType`/`roleId`/status — both read the row live.
 
 Every mutation writes an audit row via `logAudit(userId, ACTION, details)` from `@/lib/audit`.
 
@@ -118,6 +120,7 @@ Without it Next.js prerenders the page as static at build time and `next start` 
 
 - **Import paths**: always the `@/*` alias (maps to each app's own root). Never relative `../../`. The alias is per-app — apps can't import from each other.
 - **Prisma types** come from `@/lib/generated/prisma` (the generator's output dir), *not* `@prisma/client`. The shared client singleton is `@/lib/prisma`, which wires the `PrismaPg` driver adapter Prisma 7 requires.
+- **Prisma errors**: never `instanceof Prisma.PrismaClientKnownRequestError` — inside Next.js it's silently `false` (two copies of Prisma's runtime), while unit tests pass. Use `prismaErrorCode(err)` / `.catch(nullIfNotFound)` from `@/lib/prisma-errors`.
 - **shadcn/ui here is `base-nova` style, backed by Base UI — not Radix.** There is no `asChild` prop; use `render={<Button …/>}`. Kokonut UI is registered as `@kokonutui` in `components.json` and installs through the same shadcn CLI.
 - **Delete semantics**: a delete that would orphan references returns **409 and blocks** (Role with users, Application with granted access) — never a silent DB cascade.
 - **Admin-entered URLs** must pass `isHttpUrl()` from `@/lib/validate-url` before storage; they render as clickable `<a href>` on the Employee dashboard, so a `javascript:`/`data:` URL would be stored XSS.

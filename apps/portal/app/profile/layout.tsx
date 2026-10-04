@@ -1,4 +1,4 @@
-import { auth } from "@/auth";
+import { requirePageUser } from "@/lib/page-auth";
 import { AppShell } from "@/components/shell/app-shell";
 import {
   ADMIN_NAV,
@@ -22,10 +22,11 @@ export default async function ProfileLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const session = await auth();
-  const zone = session?.user
-    ? ZONE_BY_USER_TYPE[session.user.userType]
-    : { label: "Account", nav: [] };
+  // Live userType, not the token's — someone promoted since sign-in should see
+  // their new zone's nav. Same guard as the page (request-cached), so a
+  // disabled account is redirected before the shell renders.
+  const user = await requirePageUser("ANY");
+  const zone = ZONE_BY_USER_TYPE[user.userType];
 
   return (
     <AppShell zoneLabel={zone.label} nav={zone.nav}>

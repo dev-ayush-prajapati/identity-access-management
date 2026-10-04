@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fakeSession, jsonRequest, paramsOf, mockLiveCallerFromSession } from "@/test/helpers";
+import { fakeSession, jsonRequest, paramsOf, mockLiveCallerFromSession, prismaError } from "@/test/helpers";
 
 const { authMock, prismaMock, logAuditMock } = vi.hoisted(() => ({
   authMock: vi.fn(),
@@ -45,11 +45,30 @@ describe("PATCH /api/roles/[id]", () => {
   });
 
   it("404s when the role doesn't exist", async () => {
-    prismaMock.role.update.mockRejectedValue(new Error("not found"));
+    prismaMock.role.update.mockRejectedValue(prismaError("P2025"));
 
     const res = await PATCH(jsonRequest(URL_, "PATCH", { name: "IT" }), paramsOf("r1"));
 
     expect(res.status).toBe(404);
+  });
+
+  it("409s when renaming to a name another role already has", async () => {
+    prismaMock.role.update.mockRejectedValue(prismaError("P2002"));
+
+    const res = await PATCH(jsonRequest(URL_, "PATCH", { name: "HR" }), paramsOf("r1"));
+    const data = await res.json();
+
+    expect(res.status).toBe(409);
+    expect(data.error).toContain("already exists");
+    expect(logAuditMock).not.toHaveBeenCalled();
+  });
+
+  it("doesn't disguise an unexpected database error as 404", async () => {
+    prismaMock.role.update.mockRejectedValue(new Error("connection refused"));
+
+    await expect(
+      PATCH(jsonRequest(URL_, "PATCH", { name: "IT" }), paramsOf("r1"))
+    ).rejects.toThrow("connection refused");
   });
 });
 
@@ -63,6 +82,29 @@ describe("DELETE /api/roles/[id]", () => {
     expect(res.status).toBe(409);
     expect(data.error).toContain("3 user(s)");
     expect(prismaMock.role.delete).not.toHaveBeenCalled();
+  });
+
+  // Archiving keeps a user's roleId (the row stays for audit history), so a
+  // count that included them would block the delete forever — the Admin can't
+  // see or reassign an archived user.
+  it("doesn't count archived users as still holding the role", async () => {
+    prismaMock.user.count.mockResolvedValue(0);
+    prismaMock.role.delete.mockResolvedValue({ id: "r1", name: "HR" });
+
+    await DELETE(jsonRequest(URL_, "DELETE"), paramsOf("r1"));
+
+    expect(prismaMock.user.count).toHaveBeenCalledWith({
+      where: { roleId: "r1", archivedAt: null },
+    });
+  });
+
+  it("404s when the role doesn't exist", async () => {
+    prismaMock.user.count.mockResolvedValue(0);
+    prismaMock.role.delete.mockRejectedValue(prismaError("P2025"));
+
+    const res = await DELETE(jsonRequest(URL_, "DELETE"), paramsOf("r1"));
+
+    expect(res.status).toBe(404);
   });
 
   it("deletes the role when no user references it", async () => {

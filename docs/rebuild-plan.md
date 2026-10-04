@@ -28,7 +28,7 @@ below.
 | 1 | Revocation | ✅ Done, merged to `main` (PR #13), verified live in browser |
 | 2 | Real enforcement | ✅ Done, verified live in browser. The 404 was dev-server port drift, now fixed |
 | 3 | Joiner / mover / leaver | ✅ Done, verified live in browser |
-| 4 | Audit log that deserves the name | 🟡 Structured fields, new events, server-side pagination all built and gate-verified — not yet clicked through live |
+| 4 | Audit log that deserves the name | 🟡 Structured fields, new events, server-side pagination verified live — atomic audit writes + CSV export (`review-findings.md` #6, #7) still open |
 | 5 | Keycloak done properly | ⬜ Not started |
 | 6 | Integrity + UI correctness | ⬜ Not started |
 | 7 | Presentation honesty | ⬜ Not started |
@@ -362,8 +362,11 @@ through live in a browser.
 **Server-side pagination (2026-10-01)** — replaces the client-side filter
 over the hard 100-row cap, so search and filters now cover the whole log.
 Gate green (lint, `tsc --noEmit`, 154 tests, build — `/admin/audit` still
-`ƒ Dynamic`). **Not yet verified against a live database or in a browser**
-(Docker wasn't running that session).
+`ƒ Dynamic`). **Verified live in the browser 2026-10-04** against 83 real
+audit rows: Older/Newer across 2 pages, chip counts matching what each chip
+shows, a case-insensitive search finding entries from page 2, URL state
+surviving refresh and Back, `?page=999` → last page, junk `page`/`category`
+→ defaults, "No entries match" → Clear filters.
 
 - The URL is the whole state: `/admin/audit?q=&category=&page=`. Filtered
   views are linkable and survive a refresh; the back button works.
@@ -418,6 +421,12 @@ database silently does the opposite of what the app claims). Fix the missing
 network failure today shows a grant/edit as succeeded when nothing was written,
 and no toast fires. `router.refresh()` consistency across managers; add
 `error.tsx`/`not-found.tsx`; `required` on the Employee role `Select`.
+
+**Constraint from `fix/review-findings` (2026-10-02):** role delete now
+ignores archived holders and relies on `User.roleId`'s current `SetNull` to
+clear their `roleId` (`docs/review-findings.md` #3). If this phase changes that
+FK to `Restrict`, archiving a user must clear `roleId` first — otherwise any
+role an archived user once held becomes undeletable again.
 
 ## Phase 7 — Presentation honesty ⬜
 
