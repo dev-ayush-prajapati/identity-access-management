@@ -53,6 +53,13 @@ node scripts/bootstrap-superadmin.ts
 
 The bootstrap script creates the first SuperAdmin (Keycloak login + matching Postgres row) — nobody exists yet to create one through the app UI. It's idempotent; safe to re-run.
 
+**Already had Keycloak running before a `keycloak/realm-export.json` change?** Docker Compose's `--import-realm` only imports a realm that doesn't exist yet, so apply the export to your running Keycloak (idempotent; uses the master admin login from the root `.env`):
+
+```bash
+cd apps/portal
+node --env-file=../../.env --env-file=.env scripts/sync-keycloak-realm.ts
+```
+
 **3b. (Optional but recommended) Seed demo data:**
 
 ```bash

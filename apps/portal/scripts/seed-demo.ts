@@ -21,8 +21,8 @@ const {
   DATABASE_URL,
   KEYCLOAK_BASE_URL,
   KEYCLOAK_REALM,
-  KEYCLOAK_ADMIN_USER,
-  KEYCLOAK_ADMIN_PASSWORD,
+  KEYCLOAK_ADMIN_CLIENT_ID,
+  KEYCLOAK_ADMIN_CLIENT_SECRET,
 } = process.env;
 
 function requireEnv(name: string, value: string | undefined): string {
@@ -382,8 +382,8 @@ async function main() {
   const realm = requireEnv("KEYCLOAK_REALM", KEYCLOAK_REALM);
   // Read by lib/keycloak-admin on every call — checked here too so a missing
   // one fails before anything is written, not halfway through the accounts.
-  requireEnv("KEYCLOAK_ADMIN_USER", KEYCLOAK_ADMIN_USER);
-  requireEnv("KEYCLOAK_ADMIN_PASSWORD", KEYCLOAK_ADMIN_PASSWORD);
+  requireEnv("KEYCLOAK_ADMIN_CLIENT_ID", KEYCLOAK_ADMIN_CLIENT_ID);
+  requireEnv("KEYCLOAK_ADMIN_CLIENT_SECRET", KEYCLOAK_ADMIN_CLIENT_SECRET);
 
   try {
     await assertPostgresReady();

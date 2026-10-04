@@ -1,9 +1,16 @@
 import crypto from "crypto";
 
-// Thin wrapper over Keycloak's Admin REST API (master realm admin-cli grant).
-// Used both by scripts/bootstrap-superadmin.ts and by the User Management
-// API routes — creating an app User always means creating a Keycloak login
-// too, since Keycloak (not Postgres) owns credentials.
+// Thin wrapper over Keycloak's Admin REST API. Used by the User Management
+// API routes and by scripts/bootstrap-superadmin.ts + seed-demo.ts — creating
+// an app User always means creating a Keycloak login too, since Keycloak (not
+// Postgres) owns credentials.
+//
+// Acts as this realm's `portal-admin` service account (client-credentials
+// grant, see keycloak/realm-export.json), which holds only manage/view/query
+// users in this realm. It used to sign in as Keycloak's master `admin`, which
+// controls every realm and Keycloak itself — a leaked portal env would have
+// handed over the whole installation. The master login now lives only in the
+// root .env, for the container and scripts/sync-keycloak-realm.ts.
 
 function requireEnv(name: string, value: string | undefined): string {
   if (!value) {
@@ -12,36 +19,53 @@ function requireEnv(name: string, value: string | undefined): string {
   return value;
 }
 
-function config() {
-  return {
-    baseUrl: requireEnv("KEYCLOAK_BASE_URL", process.env.KEYCLOAK_BASE_URL),
-    realm: requireEnv("KEYCLOAK_REALM", process.env.KEYCLOAK_REALM),
-    adminUser: requireEnv("KEYCLOAK_ADMIN_USER", process.env.KEYCLOAK_ADMIN_USER),
-    adminPassword: requireEnv("KEYCLOAK_ADMIN_PASSWORD", process.env.KEYCLOAK_ADMIN_PASSWORD),
-  };
-}
-
 export function generateTempPassword(): string {
   return crypto.randomBytes(9).toString("base64url");
 }
 
-async function getAdminToken(baseUrl: string, user: string, password: string) {
-  const res = await fetch(`${baseUrl}/realms/master/protocol/openid-connect/token`, {
+// Fresh token per call — a handful of admin operations per minute at most,
+// so caching it isn't worth the expiry handling.
+async function adminSession(): Promise<{ baseUrl: string; realm: string; token: string }> {
+  const baseUrl = requireEnv("KEYCLOAK_BASE_URL", process.env.KEYCLOAK_BASE_URL);
+  const realm = requireEnv("KEYCLOAK_REALM", process.env.KEYCLOAK_REALM);
+  const clientId = requireEnv("KEYCLOAK_ADMIN_CLIENT_ID", process.env.KEYCLOAK_ADMIN_CLIENT_ID);
+  const clientSecret = requireEnv("KEYCLOAK_ADMIN_CLIENT_SECRET", process.env.KEYCLOAK_ADMIN_CLIENT_SECRET);
+
+  const res = await fetch(`${baseUrl}/realms/${realm}/protocol/openid-connect/token`, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
-      client_id: "admin-cli",
-      username: user,
-      password,
-      grant_type: "password",
+      grant_type: "client_credentials",
+      client_id: clientId,
+      client_secret: clientSecret,
     }),
   });
   if (!res.ok) {
-    console.error(`Keycloak admin token request failed: ${res.status} ${await res.text()}`);
+    console.error(`Keycloak service-account token request failed: ${res.status} ${await res.text()}`);
     throw new Error("Failed to authenticate with Keycloak");
   }
   const data = await res.json();
-  return data.access_token as string;
+  return { baseUrl, realm, token: data.access_token as string };
+}
+
+// Exact email match; null when there's no such login. Used by the bootstrap
+// script to reuse a Keycloak account that already exists. By email, not
+// username: accounts made before usernames were set to the email (the first
+// SuperAdmin's username is just "ayush") would be missed, and the email is
+// what the portal treats as a person's identity.
+export async function findKeycloakUserIdByEmail(email: string): Promise<string | null> {
+  const { baseUrl, realm, token } = await adminSession();
+
+  const res = await fetch(
+    `${baseUrl}/admin/realms/${realm}/users?email=${encodeURIComponent(email)}&exact=true`,
+    { headers: { Authorization: `Bearer ${token}` } }
+  );
+  if (!res.ok) {
+    console.error(`Keycloak user lookup failed: ${res.status} ${await res.text()}`);
+    throw new Error("Failed to look up the Keycloak account");
+  }
+  const users = (await res.json()) as { id: string }[];
+  return users[0]?.id ?? null;
 }
 
 export async function createKeycloakUser({
@@ -53,8 +77,7 @@ export async function createKeycloakUser({
   email: string;
   password: string;
 }): Promise<string> {
-  const { baseUrl, realm, adminUser, adminPassword } = config();
-  const token = await getAdminToken(baseUrl, adminUser, adminPassword);
+  const { baseUrl, realm, token } = await adminSession();
 
   const res = await fetch(`${baseUrl}/admin/realms/${realm}/users`, {
     method: "POST",
@@ -90,8 +113,7 @@ export async function createKeycloakUser({
 }
 
 export async function setKeycloakUserEnabled(keycloakId: string, enabled: boolean): Promise<void> {
-  const { baseUrl, realm, adminUser, adminPassword } = config();
-  const token = await getAdminToken(baseUrl, adminUser, adminPassword);
+  const { baseUrl, realm, token } = await adminSession();
 
   const res = await fetch(`${baseUrl}/admin/realms/${realm}/users/${keycloakId}`, {
     method: "PUT",
@@ -111,8 +133,7 @@ export async function setKeycloakUserEnabled(keycloakId: string, enabled: boolea
 }
 
 export async function resetKeycloakUserPassword(keycloakId: string, password: string): Promise<void> {
-  const { baseUrl, realm, adminUser, adminPassword } = config();
-  const token = await getAdminToken(baseUrl, adminUser, adminPassword);
+  const { baseUrl, realm, token } = await adminSession();
 
   const res = await fetch(
     `${baseUrl}/admin/realms/${realm}/users/${keycloakId}/reset-password`,
@@ -133,8 +154,7 @@ export async function resetKeycloakUserPassword(keycloakId: string, password: st
 }
 
 export async function deleteKeycloakUser(keycloakId: string): Promise<void> {
-  const { baseUrl, realm, adminUser, adminPassword } = config();
-  const token = await getAdminToken(baseUrl, adminUser, adminPassword);
+  const { baseUrl, realm, token } = await adminSession();
 
   const res = await fetch(`${baseUrl}/admin/realms/${realm}/users/${keycloakId}`, {
     method: "DELETE",

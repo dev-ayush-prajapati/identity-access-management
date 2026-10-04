@@ -62,7 +62,10 @@ npx prisma generate                     # required after clone and after any sch
 npx prisma migrate dev --name <desc>    # create + apply a migration in dev
 npx prisma migrate deploy               # apply existing migrations (setup path)
 node scripts/bootstrap-superadmin.ts    # idempotent; creates the first SuperAdmin (Keycloak login + Postgres row)
+node --env-file=../../.env --env-file=.env scripts/sync-keycloak-realm.ts   # apply keycloak/realm-export.json to a running Keycloak
 ```
+
+Keycloak access: the portal and its scripts act as the realm-scoped **`portal-admin` service account** (`KEYCLOAK_ADMIN_CLIENT_ID`/`_SECRET`, user-management roles only). Keycloak's master admin login lives **only in the root `.env`** (container + sync script) — never add it to `apps/portal/.env`. `--import-realm` skips an existing realm, so any `realm-export.json` change needs the sync script on an existing install.
 
 Config lives in `prisma.config.ts` (Prisma 7 style — loads `dotenv`, points at `prisma/schema.prisma`); the schema's datasource has no inline `url`.
 

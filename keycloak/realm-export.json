@@ -36,6 +36,29 @@
       "attributes": {
         "post.logout.redirect.uris": "+"
       }
+    },
+    {
+      "clientId": "portal-admin",
+      "name": "Portal user management (service account)",
+      "description": "Used only by the portal's server side to create, disable, reset, and remove this realm's users. No login flow; client-credentials only.",
+      "enabled": true,
+      "publicClient": false,
+      "secret": "portal-admin-dev-secret-change-me",
+      "protocol": "openid-connect",
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": true
+    }
+  ],
+  "users": [
+    {
+      "username": "service-account-portal-admin",
+      "enabled": true,
+      "serviceAccountClientId": "portal-admin",
+      "clientRoles": {
+        "realm-management": ["manage-users", "view-users", "query-users"]
+      }
     }
   ]
 }

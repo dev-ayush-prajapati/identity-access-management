@@ -410,9 +410,49 @@ Separate from this phase: a full codebase review on 2026-10-01 logged ten
 findings outside the existing phases (page-level revocation gap, archived
 users reappearing, and more) in `docs/review-findings.md`.
 
-## Phase 5 — Keycloak done properly ⬜
+## Phase 5 — Keycloak done properly 🟡
 
-Not started. Replace the master-realm admin password grant
+**Plan (agreed 2026-10-04)** — five sub-steps, each its own branch, PR, and
+browser pass:
+
+| # | Sub-step | Status |
+|---|---|---|
+| 5.1 | Least-privilege admin: realm-scoped `portal-admin` service account replaces the master-admin login in the app and scripts; `scripts/sync-keycloak-realm.ts` applies `realm-export.json` to a running Keycloak (`--import-realm` skips an existing realm) | ✅ Done, verified live |
+| 5.2 | Realm hardening: password policy, brute-force lockout, session/token lifespans; `review-findings.md` #11 (optional last name) | ⬜ |
+| 5.3 | MFA: TOTP **required for SuperAdmin and Admin**, opt-in for Employees | ⬜ |
+| 5.4 | `review-findings.md` #9: finance-app authenticates to the PDP with its own Keycloak service-account token; `Application.clientId` replaces the self-reported origin and the shared secret | ⬜ |
+| 5.5 | Keycloak storage moves from embedded H2 to a `keycloak` database in the existing Postgres — **last, behind a volume backup**, full realm+user export/import | ⬜ |
+
+**5.1 — least-privilege admin (2026-10-04, `feat/keycloak-service-account`).**
+Gate green (lint, `tsc --noEmit`, 203 tests, build).
+
+- `keycloak/realm-export.json`: new confidential client `portal-admin` —
+  client-credentials only (no login flows) — whose service account holds
+  `realm-management` → `manage-users`, `view-users`, `query-users`, nothing
+  else.
+- `lib/keycloak-admin.ts` signs in as that service account
+  (`KEYCLOAK_ADMIN_CLIENT_ID`/`_SECRET`) against this realm's token endpoint;
+  `lib/keycloak-admin.test.ts` asserts it never touches `/realms/master`.
+  `scripts/bootstrap-superadmin.ts` dropped its own copy of the token/create
+  code and uses the library; `seed-demo.ts` checks the new vars.
+- The master admin login left `apps/portal/.env` entirely — root `.env` only,
+  for the container and the new operator script.
+- `scripts/sync-keycloak-realm.ts`: applies `realm-export.json` to a running
+  Keycloak (realm settings, clients, service-account role grants),
+  idempotent. Needed because `--import-realm` skips an existing realm; every
+  later Phase 5 realm change goes through it.
+- Found along the way: the bootstrap's "does this Keycloak login already
+  exist?" check looked up by username, but the first SuperAdmin's username is
+  `ayush` (predates usernames = email), so it was invisible to it. Now by email.
+
+**Verified live 2026-10-04:** least-privilege probe with the service account —
+this realm's users 200; master realm users 403; changing realm settings 403;
+the client list came back empty (no secrets visible); the realm list showed
+only this realm's name. Sync re-run changed nothing. Browser: an Admin created,
+password-reset, disabled, enabled, and deleted an Employee — five audit rows,
+Keycloak login gone afterwards.
+
+Original scope note: Replace the master-realm admin password grant
 (`lib/keycloak-admin.ts` authenticates as Keycloak's own `admin` user on every
 user create/delete) with a realm-scoped service-account client holding
 `realm-management` → `manage-users`/`view-users` — blast radius drops from "the
