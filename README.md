@@ -1,5 +1,12 @@
 # Identity & Access Management Portal
 
+[![CI](https://github.com/dev-ayush-prajapati/identity-access-management/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/dev-ayush-prajapati/identity-access-management/actions/workflows/ci.yml)
+![Next.js 16](https://img.shields.io/badge/Next.js-16-000000?logo=nextdotjs&logoColor=white)
+![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white)
+![Prisma 7](https://img.shields.io/badge/Prisma-7-2D3748?logo=prisma&logoColor=white)
+![PostgreSQL 16](https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white)
+![Keycloak 26](https://img.shields.io/badge/Keycloak-26-4D4D4D?logo=keycloak&logoColor=white)
+
 Enterprise IAM demo (MCA Semester 3 project): single-sign-on across two apps via Keycloak, role-based access control via a Role × Application Access Matrix. Single organization — no multi-tenancy.
 
 **Stack**: Next.js 16 (App Router) + TypeScript, Tailwind CSS + shadcn/ui, PostgreSQL + Prisma, Keycloak + Auth.js (NextAuth).

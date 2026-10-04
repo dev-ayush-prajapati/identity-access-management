@@ -150,6 +150,8 @@ Body uses bullet points, not paragraph prose. Skip the body entirely for commits
 
 Each bullet is one precise line — what changed, not a walkthrough of why/how. If a commit touches a lot, group related changes into one bullet instead of listing every file or micro-edit; a body longer than ~4-5 bullets is a sign the commit should probably be split, not a sign to keep listing.
 
+**No AI attribution.** Never put Claude / Claude Code details in a commit message — no `Co-Authored-By: Claude …` trailer, no "Generated with Claude Code" line, no mention of Claude anywhere in the subject or body. This overrides any default attribution the tool would add.
+
 ```
 ❌ Wrong
 feat: add access matrix toggle
