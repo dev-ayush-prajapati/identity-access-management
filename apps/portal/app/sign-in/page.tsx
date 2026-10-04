@@ -1,15 +1,9 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { ChevronLeftIcon, KeyRound } from "lucide-react";
-import { auth } from "@/auth";
+import { ZONE_HOME, decidePageAccess, getLiveUser } from "@/lib/page-auth";
 import { cn } from "@/lib/utils";
 import { FloatingPaths } from "@/components/auth/floating-paths";
-
-const ZONE_BY_USER_TYPE: Record<string, string> = {
-  SUPERADMIN: "/superadmin",
-  ADMIN: "/admin",
-  EMPLOYEE: "/dashboard",
-};
 
 const focusRing =
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slash-copper focus-visible:ring-offset-2 focus-visible:ring-offset-slash-obsidian";
@@ -20,9 +14,10 @@ const focusRing =
 // there's nothing else real to put here (see docs/planning-notes.md §3:
 // "single Keycloak-hosted login page, same for everyone").
 export default async function SignInPage() {
-  const session = await auth();
-  if (session?.user) {
-    redirect(ZONE_BY_USER_TYPE[session.user.userType] ?? "/profile");
+  // Live account, not the session token — same reasoning as app/page.tsx.
+  const user = await getLiveUser();
+  if (user && decidePageAccess(user, "ANY").allow) {
+    redirect(ZONE_HOME[user.userType]);
   }
 
   return (

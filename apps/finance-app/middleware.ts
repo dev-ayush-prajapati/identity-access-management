@@ -15,12 +15,23 @@ import { checkAccess } from "@/lib/authz-check";
 export default auth(async (req) => {
   const session = req.auth;
 
-  if (!session?.user?.keycloakId) {
+  if (!session?.user) {
     // Not signed in — the page itself redirects to /api/auth/signin.
     return NextResponse.next();
   }
 
-  const decision = await checkAccess(session.user.keycloakId, "revalidate");
+  // A session with no keycloakId (a cookie minted before this check existed)
+  // can't be checked against the Access Matrix, so it must not be let through
+  // — fail closed. Signing in again replaces it with one that carries the id,
+  // and runs the signIn-time check in auth.ts on the way.
+  const keycloakId = session.user.keycloakId;
+  if (!keycloakId) {
+    const signInUrl = new URL("/api/auth/signin", req.nextUrl.origin);
+    signInUrl.searchParams.set("callbackUrl", req.nextUrl.href);
+    return NextResponse.redirect(signInUrl);
+  }
+
+  const decision = await checkAccess(keycloakId, "revalidate");
   if (!decision.allow) {
     return NextResponse.redirect(new URL("/access-denied", req.nextUrl.origin));
   }

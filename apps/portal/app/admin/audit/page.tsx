@@ -1,5 +1,6 @@
 import { Download } from "lucide-react";
 import { prisma } from "@/lib/prisma";
+import { requirePageUser } from "@/lib/page-auth";
 import { AuditLogExplorer } from "@/components/audit-log/audit-log-explorer";
 import { PageHeader } from "@/components/shell/page-header";
 import { buttonVariants } from "@/components/ui/button";
@@ -21,6 +22,8 @@ export default async function AdminAuditPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
+  await requirePageUser("ADMIN");
+
   const query = parseAuditQuery(await searchParams);
 
   // One groupBy over the search-matching rows gives both the chip counts and

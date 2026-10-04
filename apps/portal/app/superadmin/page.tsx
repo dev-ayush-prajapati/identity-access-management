@@ -1,5 +1,6 @@
 import { AppWindow, Shield, UserCog, Users } from "lucide-react";
 import { prisma } from "@/lib/prisma";
+import { requirePageUser } from "@/lib/page-auth";
 import { PageHeader } from "@/components/shell/page-header";
 import { StatCard } from "@/components/stats/stat-card";
 import {
@@ -16,11 +17,14 @@ import { Card, CardContent } from "@/components/ui/card";
 export const dynamic = "force-dynamic";
 
 export default async function SuperAdminOverviewPage() {
+  await requirePageUser("SUPERADMIN");
+
   const [applicationCount, adminCount, employeeCount, windowActivity] =
     await Promise.all([
       prisma.application.count(),
-      prisma.user.count({ where: { userType: "ADMIN" } }),
-      prisma.user.count({ where: { userType: "EMPLOYEE" } }),
+      // Archived accounts are kept only for audit history — not headcount.
+      prisma.user.count({ where: { userType: "ADMIN", archivedAt: null } }),
+      prisma.user.count({ where: { userType: "EMPLOYEE", archivedAt: null } }),
       // Timestamps only — the buckets are counted in JS, so nothing else is
       // worth pulling across.
       prisma.auditLog.findMany({

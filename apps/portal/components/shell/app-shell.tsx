@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { UserRound } from "lucide-react";
-import { auth } from "@/auth";
+import { getLiveUser } from "@/lib/page-auth";
 import { Badge } from "@/components/ui/badge";
 import { SignOutForm } from "@/components/auth/sign-out-form";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -30,8 +30,10 @@ interface AppShellProps {
 // content instead of a drawer, so there's no client-side open/close state to
 // manage and nothing new to install.
 export async function AppShell({ zoneLabel, nav, children }: AppShellProps) {
-  const session = await auth();
-  const user = session?.user;
+  // Live, so the header shows the current name and account type rather than
+  // whatever the session token captured at sign-in. Cached per request — the
+  // page's own guard reuses this same lookup.
+  const user = await getLiveUser();
 
   return (
     <div className="flex min-h-screen flex-col md:flex-row">

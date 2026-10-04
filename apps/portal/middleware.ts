@@ -6,34 +6,21 @@ import { authConfig } from "@/auth.config";
 // Edge runtime and must not pull in Prisma. See auth.config.ts.
 const { auth } = NextAuth(authConfig);
 
-const ZONE_PREFIXES: Array<[string, string]> = [
-  ["/superadmin", "SUPERADMIN"],
-  ["/admin", "ADMIN"],
-  ["/dashboard", "EMPLOYEE"],
-];
-
+// Authentication only: "is there a session at all?" — the cheap first pass
+// that sends a signed-out visitor to Keycloak.
+//
+// Which zone someone may enter is deliberately not decided here. All this
+// runtime can see is the session JWT, whose userType/status are frozen at
+// sign-in — a zone check on it would keep a disabled Admin inside /admin, and
+// would redirect-loop against the live check for anyone promoted or demoted
+// since they signed in. Every zone page calls requirePageUser
+// (lib/page-auth.ts), which reads the user from Postgres on each request;
+// lib/page-auth.test.ts fails if a zone page doesn't.
 export default auth((req) => {
-  const { pathname } = req.nextUrl;
-  const session = req.auth;
-
-  const zoneEntry = ZONE_PREFIXES.find(([prefix]) => pathname.startsWith(prefix));
-  const requiresLogin = zoneEntry || pathname.startsWith("/profile");
-
-  if (!requiresLogin) {
-    return NextResponse.next();
-  }
-
-  if (!session?.user) {
+  if (!req.auth?.user) {
     const signInUrl = new URL("/api/auth/signin", req.nextUrl.origin);
     signInUrl.searchParams.set("callbackUrl", req.nextUrl.href);
     return NextResponse.redirect(signInUrl);
-  }
-
-  if (zoneEntry) {
-    const [, requiredType] = zoneEntry;
-    if (session.user.userType !== requiredType) {
-      return NextResponse.redirect(new URL("/", req.nextUrl.origin));
-    }
   }
 
   return NextResponse.next();

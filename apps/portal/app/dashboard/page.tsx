@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { AppWindow, KeyRound } from "lucide-react";
-import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { requirePageUser } from "@/lib/page-auth";
 import { PageHeader } from "@/components/shell/page-header";
 import { EmptyState } from "@/components/common/empty-state";
 import { AppTile } from "@/components/dashboard/app-tile";
@@ -15,22 +15,10 @@ import { isHttpUrl } from "@/lib/validate-url";
 export const dynamic = "force-dynamic";
 
 export default async function DashboardPage() {
-  const session = await auth();
-
-  // Read live from Postgres rather than trusting the session's roleId: the
-  // session JWT is only refreshed at login, so an Admin reassigning this
-  // Employee's role must show up here on the very next page load, not the
-  // Employee's next login. A disabled account (status flips after the token
-  // was already issued) is treated the same as "no role" — no apps, not a
-  // crash — since middleware can't see Postgres state to block the page
-  // itself.
-  const currentUser = session?.user
-    ? await prisma.user.findUnique({
-        where: { id: session.user.id },
-        select: { roleId: true, status: true },
-      })
-    : null;
-  const roleId = currentUser?.status === "ACTIVE" ? currentUser.roleId : null;
+  // Live from Postgres, not the session JWT (frozen at login): an Admin
+  // reassigning this Employee's role shows up on the very next page load, and
+  // a disabled account is redirected out before anything renders.
+  const { roleId } = await requirePageUser("EMPLOYEE");
 
   const applications = roleId
     ? await prisma.application.findMany({

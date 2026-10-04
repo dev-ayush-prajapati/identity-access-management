@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { requireUserType } from "@/lib/api-auth";
 import { logAudit, requestMeta } from "@/lib/audit";
 import { createKeycloakUser, deleteKeycloakUser, generateTempPassword } from "@/lib/keycloak-admin";
+import { listManagedUsers } from "@/lib/users";
 import type { UserType } from "@/lib/generated/prisma";
 
 // SuperAdmin manages Admins; Admin manages Employees — each caller only ever
@@ -16,11 +17,7 @@ export async function GET() {
   const { session, error } = await requireUserType(["SUPERADMIN", "ADMIN"]);
   if (error) return error;
 
-  const users = await prisma.user.findMany({
-    where: { userType: managedUserType(session.user.userType), archivedAt: null },
-    include: { role: true },
-    orderBy: { createdAt: "asc" },
-  });
+  const users = await listManagedUsers(managedUserType(session.user.userType));
   return NextResponse.json(users);
 }
 

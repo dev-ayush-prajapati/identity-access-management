@@ -1,4 +1,5 @@
-import { prisma } from "@/lib/prisma";
+import { requirePageUser } from "@/lib/page-auth";
+import { listManagedUsers } from "@/lib/users";
 import { UsersManager } from "@/components/users/users-manager";
 import { PageHeader } from "@/components/shell/page-header";
 
@@ -7,11 +8,9 @@ import { PageHeader } from "@/components/shell/page-header";
 export const dynamic = "force-dynamic";
 
 export default async function SuperAdminAdminsPage() {
-  const admins = await prisma.user.findMany({
-    where: { userType: "ADMIN" },
-    include: { role: true },
-    orderBy: { createdAt: "asc" },
-  });
+  await requirePageUser("SUPERADMIN");
+
+  const admins = await listManagedUsers("ADMIN");
 
   return (
     <>

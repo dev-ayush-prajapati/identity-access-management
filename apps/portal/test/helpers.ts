@@ -1,7 +1,17 @@
 import { NextRequest } from "next/server";
 import type { Session } from "next-auth";
 import type { Mock } from "vitest";
-import type { UserType } from "@/lib/generated/prisma";
+import { Prisma, type UserType } from "@/lib/generated/prisma";
+
+// The error Prisma throws for a known failure — e.g. "P2002" (unique
+// constraint), "P2025" (record to update/delete not found) — for mocking a
+// write that fails the way the real client would.
+export function prismaError(code: string): Prisma.PrismaClientKnownRequestError {
+  return new Prisma.PrismaClientKnownRequestError("mocked Prisma error", {
+    code,
+    clientVersion: "test",
+  });
+}
 
 // Shared fixtures for API route tests — keeps each route.test.ts focused on
 // the behavior it's actually verifying instead of request/session plumbing.

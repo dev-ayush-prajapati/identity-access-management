@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fakeSession, jsonRequest, paramsOf, mockLiveCallerFromSession } from "@/test/helpers";
+import { fakeSession, jsonRequest, paramsOf, mockLiveCallerFromSession, prismaError } from "@/test/helpers";
 
 const { authMock, prismaMock, logAuditMock } = vi.hoisted(() => ({
   authMock: vi.fn(),
@@ -57,11 +57,30 @@ describe("PATCH /api/applications/[id]", () => {
   });
 
   it("404s when the application doesn't exist", async () => {
-    prismaMock.application.update.mockRejectedValue(new Error("not found"));
+    prismaMock.application.update.mockRejectedValue(prismaError("P2025"));
 
     const res = await PATCH(jsonRequest(URL_, "PATCH", { name: "New" }), paramsOf("a1"));
 
     expect(res.status).toBe(404);
+  });
+
+  it("409s when renaming to a name another application already has", async () => {
+    prismaMock.application.update.mockRejectedValue(prismaError("P2002"));
+
+    const res = await PATCH(jsonRequest(URL_, "PATCH", { name: "Payroll" }), paramsOf("a1"));
+    const data = await res.json();
+
+    expect(res.status).toBe(409);
+    expect(data.error).toContain("already exists");
+    expect(logAuditMock).not.toHaveBeenCalled();
+  });
+
+  it("doesn't disguise an unexpected database error as 404", async () => {
+    prismaMock.application.update.mockRejectedValue(new Error("connection refused"));
+
+    await expect(
+      PATCH(jsonRequest(URL_, "PATCH", { name: "New" }), paramsOf("a1"))
+    ).rejects.toThrow("connection refused");
   });
 
   it("updates the application and logs the audit entry", async () => {
@@ -91,7 +110,7 @@ describe("DELETE /api/applications/[id]", () => {
   });
 
   it("404s when the application doesn't exist", async () => {
-    prismaMock.application.delete.mockRejectedValue(new Error("not found"));
+    prismaMock.application.delete.mockRejectedValue(prismaError("P2025"));
 
     const res = await DELETE(jsonRequest(URL_, "DELETE"), paramsOf("a1"));
 

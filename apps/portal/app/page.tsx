@@ -8,8 +8,8 @@ import {
   ScrollText,
   Shield,
 } from "lucide-react";
-import { auth } from "@/auth";
 import { redirect } from "next/navigation";
+import { ZONE_HOME, decidePageAccess, getLiveUser } from "@/lib/page-auth";
 import { cn } from "@/lib/utils";
 import { AnimatedNumber } from "@/components/common/animated-number";
 
@@ -26,12 +26,6 @@ const uiSans = localFont({
   variable: "--font-slash-sans",
   weight: "300 600",
 });
-
-const ZONE_BY_USER_TYPE: Record<string, string> = {
-  SUPERADMIN: "/superadmin",
-  ADMIN: "/admin",
-  EMPLOYEE: "/dashboard",
-};
 
 // Decorative preview of the real Access Matrix (Role x Application). Not
 // live data - just enough of a pattern to read as believable. Purely
@@ -112,10 +106,13 @@ function LiveDot() {
 }
 
 export default async function Home() {
-  const session = await auth();
-
-  if (session?.user) {
-    redirect(ZONE_BY_USER_TYPE[session.user.userType] ?? "/profile");
+  // Route by the live account, not the session token: a disabled or archived
+  // account that still holds a cookie gets this signed-out page (not a
+  // redirect back into a zone that would only bounce it here again), and
+  // someone promoted since sign-in lands in their new zone.
+  const user = await getLiveUser();
+  if (user && decidePageAccess(user, "ANY").allow) {
+    redirect(ZONE_HOME[user.userType]);
   }
 
   return (

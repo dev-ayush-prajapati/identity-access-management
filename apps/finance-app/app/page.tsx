@@ -98,10 +98,16 @@ export default async function Home() {
             </div>
           </div>
 
+          {/* Deliberately not "signing out of the portal signs you out here":
+              portal sign-out ends the shared Keycloak session, but this app's
+              own cookie is independent and nothing tells it (no back-channel
+              logout yet — docs/review-findings.md #5). What does hold is the
+              per-request access check. */}
           <p className="mt-4 text-sm text-muted-foreground">
             Both applications trust the same Keycloak realm, so the session you
-            opened at the portal is the one that let you in here. Signing out
-            from the portal ends it in both places.
+            opened at the portal is the one that let you in here. Your access is
+            re-checked against the portal on every visit, so a revoked grant or
+            a disabled account locks you out here immediately.
           </p>
         </div>
 
