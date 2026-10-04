@@ -28,7 +28,7 @@ below.
 | 1 | Revocation | ✅ Done, merged to `main` (PR #13), verified live in browser |
 | 2 | Real enforcement | ✅ Done, verified live in browser. The 404 was dev-server port drift, now fixed |
 | 3 | Joiner / mover / leaver | ✅ Done, verified live in browser |
-| 4 | Audit log that deserves the name | 🟡 Structured fields, new events, server-side pagination verified live — atomic audit writes + CSV export (`review-findings.md` #6, #7) still open |
+| 4 | Audit log that deserves the name | ✅ Done, verified live in browser (structured fields, new events, pagination, atomic audit writes, hardened CSV export) |
 | 5 | Keycloak done properly | ⬜ Not started |
 | 6 | Integrity + UI correctness | ⬜ Not started |
 | 7 | Presentation honesty | ⬜ Not started |
@@ -302,7 +302,7 @@ each check confirmed at the Postgres/Keycloak level too, not just the UI:**
   files (`reset-password`, `user-type`) and a new `lib/audit.test.ts` for the
   actor-snapshot behavior. 99 → 124 tests.
 
-## Phase 4 — Audit log that deserves the name 🟡
+## Phase 4 — Audit log that deserves the name ✅
 
 **Branch:** `feat/structured-audit-log` (cut from `main` after the Phase 3 PR
 merged). Gate green (lint, `tsc --noEmit`, 134 tests, build); not yet clicked
@@ -393,8 +393,18 @@ surviving refresh and Back, `?page=999` → last page, junk `page`/`category`
 - Known ceiling, marked `ponytail:` in `app/admin/audit/page.tsx`: offset
   paging, so a new row written mid-browse shifts later pages by one. Switch
   to a `(createdAt, id)` cursor if that ever matters.
-- Still open in this phase: the CSV export is the whole unfiltered log and
-  omits the structured fields — see `docs/review-findings.md` #7.
+- The CSV export stays the whole, unfiltered log (it's the archival copy,
+  not the on-screen view).
+
+**Atomic audit writes + hardened CSV export (2026-10-04)** — the last two
+gaps, `docs/review-findings.md` #6 and #7, closed on
+`feat/audit-atomic-export` and verified live (details in that file's fix
+log). Every audit row that records a change now commits in the same
+transaction as the change (`logAudit(entry, tx)`), with Keycloak
+compensation where Keycloak moved first; the export neutralizes
+spreadsheet formulas and carries the structured columns. 199 tests.
+
+**Phase 4 ✅ done.**
 
 Separate from this phase: a full codebase review on 2026-10-01 logged ten
 findings outside the existing phases (page-level revocation gap, archived
