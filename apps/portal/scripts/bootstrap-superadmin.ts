@@ -2,20 +2,18 @@
 // Nobody exists yet to create this through the app UI, so it's bootstrapped
 // directly here — creates the Keycloak login + the matching Postgres User row.
 //
+// Goes through lib/keycloak-admin.ts like every other account creation, so it
+// acts as the realm's portal-admin service account (KEYCLOAK_ADMIN_CLIENT_ID /
+// KEYCLOAK_ADMIN_CLIENT_SECRET), not Keycloak's master admin.
+//
 // Run with: node scripts/bootstrap-superadmin.ts   (from apps/portal)
 
 import "dotenv/config";
 import { prisma } from "../lib/prisma.ts";
+import { createKeycloakUser, findKeycloakUserIdByEmail } from "../lib/keycloak-admin.ts";
 
-const {
-  KEYCLOAK_BASE_URL,
-  KEYCLOAK_REALM,
-  KEYCLOAK_ADMIN_USER,
-  KEYCLOAK_ADMIN_PASSWORD,
-  SUPERADMIN_NAME,
-  SUPERADMIN_EMAIL,
-  SUPERADMIN_PASSWORD,
-} = process.env;
+const { KEYCLOAK_BASE_URL, KEYCLOAK_REALM, SUPERADMIN_NAME, SUPERADMIN_EMAIL, SUPERADMIN_PASSWORD } =
+  process.env;
 
 function requireEnv(name: string, value: string | undefined): string {
   if (!value) {
@@ -24,77 +22,9 @@ function requireEnv(name: string, value: string | undefined): string {
   return value;
 }
 
-async function getAdminToken(baseUrl: string, user: string, password: string) {
-  const res = await fetch(`${baseUrl}/realms/master/protocol/openid-connect/token`, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      client_id: "admin-cli",
-      username: user,
-      password: password,
-      grant_type: "password",
-    }),
-  });
-  if (!res.ok) {
-    throw new Error(`Failed to get admin token: ${res.status} ${await res.text()}`);
-  }
-  const data = await res.json();
-  return data.access_token as string;
-}
-
-async function findUserByUsername(baseUrl: string, realm: string, token: string, username: string) {
-  const res = await fetch(
-    `${baseUrl}/admin/realms/${realm}/users?username=${encodeURIComponent(username)}&exact=true`,
-    { headers: { Authorization: `Bearer ${token}` } }
-  );
-  if (!res.ok) {
-    throw new Error(`Failed to query users: ${res.status} ${await res.text()}`);
-  }
-  const users = await res.json();
-  return users[0] ?? null;
-}
-
-async function createKeycloakUser(
-  baseUrl: string,
-  realm: string,
-  token: string,
-  { name, email, password }: { name: string; email: string; password: string }
-) {
-  const res = await fetch(`${baseUrl}/admin/realms/${realm}/users`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      username: email,
-      email,
-      // Matches lib/keycloak-admin.ts, which every other account creation goes
-      // through — without it the SuperAdmin is the one user in the realm with
-      // no display name.
-      firstName: name,
-      enabled: true,
-      emailVerified: true,
-      requiredActions: ["UPDATE_PASSWORD"],
-      credentials: [{ type: "password", value: password, temporary: true }],
-    }),
-  });
-  if (!res.ok) {
-    throw new Error(`Failed to create Keycloak user: ${res.status} ${await res.text()}`);
-  }
-  const location = res.headers.get("Location");
-  const keycloakId = location?.split("/").pop();
-  if (!keycloakId) {
-    throw new Error("Keycloak did not return a user ID for the created user");
-  }
-  return keycloakId;
-}
-
 async function main() {
   const baseUrl = requireEnv("KEYCLOAK_BASE_URL", KEYCLOAK_BASE_URL);
   const realm = requireEnv("KEYCLOAK_REALM", KEYCLOAK_REALM);
-  const adminUser = requireEnv("KEYCLOAK_ADMIN_USER", KEYCLOAK_ADMIN_USER);
-  const adminPassword = requireEnv("KEYCLOAK_ADMIN_PASSWORD", KEYCLOAK_ADMIN_PASSWORD);
   const name = requireEnv("SUPERADMIN_NAME", SUPERADMIN_NAME);
   const email = requireEnv("SUPERADMIN_EMAIL", SUPERADMIN_EMAIL);
   const password = requireEnv("SUPERADMIN_PASSWORD", SUPERADMIN_PASSWORD);
@@ -106,15 +36,11 @@ async function main() {
       return;
     }
 
-    const token = await getAdminToken(baseUrl, adminUser, adminPassword);
-
-    let keycloakId: string;
-    const existingKeycloakUser = await findUserByUsername(baseUrl, realm, token, email);
-    if (existingKeycloakUser) {
+    let keycloakId = await findKeycloakUserIdByEmail(email);
+    if (keycloakId) {
       console.log(`Keycloak user "${email}" already exists, reusing it.`);
-      keycloakId = existingKeycloakUser.id;
     } else {
-      keycloakId = await createKeycloakUser(baseUrl, realm, token, { name, email, password });
+      keycloakId = await createKeycloakUser({ name, email, password });
       console.log(`Created Keycloak user "${name}" (id: ${keycloakId}), temp password set, forced reset on first login.`);
     }
 
