@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fakeSession, jsonRequest } from "@/test/helpers";
+import { fakeSession, jsonRequest, mockTransactions } from "@/test/helpers";
 
 const {
   authMock,
@@ -43,6 +43,7 @@ const URL_ = "http://localhost:3000/api/users";
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockTransactions(prismaMock);
   generateTempPasswordMock.mockReturnValue("temp-pw-123");
   prismaMock.user.findMany.mockResolvedValue([]);
   prismaMock.user.findUnique.mockImplementation(async (args: { where: { id?: string; email?: string } }) => {
@@ -140,6 +141,22 @@ describe("POST /api/users", () => {
     expect(logAuditMock).not.toHaveBeenCalled();
   });
 
+  // The row and its audit entry share a transaction, so an audit failure
+  // rolls the row back too — and must trigger the same Keycloak rollback.
+  it("500s and rolls back the Keycloak account when the audit row can't be written", async () => {
+    authMock.mockResolvedValue(fakeSession({ userType: "SUPERADMIN" }));
+    userLookupMock.mockResolvedValue(null);
+    createKeycloakUserMock.mockResolvedValue("kc-orphan");
+    prismaMock.user.create.mockResolvedValue({ id: "u1", email: "bob@x.com", roleId: null });
+    logAuditMock.mockRejectedValueOnce(new Error("audit down"));
+    deleteKeycloakUserMock.mockResolvedValue(undefined);
+
+    const res = await POST(jsonRequest(URL_, "POST", { name: "Bob", email: "bob@x.com" }));
+
+    expect(res.status).toBe(500);
+    expect(deleteKeycloakUserMock).toHaveBeenCalledWith("kc-orphan");
+  });
+
   it("a SuperAdmin can only ever create Admins, even if the request body claims otherwise", async () => {
     authMock.mockResolvedValue(fakeSession({ userType: "SUPERADMIN", id: "boss-1" }));
     userLookupMock.mockResolvedValue(null);
@@ -196,7 +213,8 @@ describe("POST /api/users", () => {
         actorId: "admin-1",
         action: "EMPLOYEE_CREATED",
         details: expect.stringContaining("Amy"),
-      })
+      }),
+      prismaMock
     );
   });
 });

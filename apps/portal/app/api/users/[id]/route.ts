@@ -43,21 +43,47 @@ export async function PATCH(
       );
     }
 
-    const user = await prisma.user.update({
-      where: { id },
-      data: { status },
-      include: { role: true },
-    });
-
-    await logAudit({
-      actorId: session.user.id,
-      action: status === "ACTIVE" ? `${target.userType}_ENABLED` : `${target.userType}_DISABLED`,
-      details: `${status === "ACTIVE" ? "Enabled" : "Disabled"} ${target.userType.toLowerCase()} "${target.name}"`,
-      targetType: "User",
-      targetId: id,
-      metadata: { status },
-      ...requestMeta(req),
-    });
+    // The status change and its audit row commit together or not at all.
+    let user;
+    try {
+      user = await prisma.$transaction(async (tx) => {
+        const updated = await tx.user.update({
+          where: { id },
+          data: { status },
+          include: { role: true },
+        });
+        await logAudit(
+          {
+            actorId: session.user.id,
+            action: status === "ACTIVE" ? `${target.userType}_ENABLED` : `${target.userType}_DISABLED`,
+            details: `${status === "ACTIVE" ? "Enabled" : "Disabled"} ${target.userType.toLowerCase()} "${target.name}"`,
+            targetType: "User",
+            targetId: id,
+            metadata: { status },
+            ...requestMeta(req),
+          },
+          tx
+        );
+        return updated;
+      });
+    } catch (err) {
+      // Compensating action, same as user create: Keycloak was already
+      // flipped above, so put it back rather than leave Keycloak and Postgres
+      // disagreeing about whether this account can sign in.
+      try {
+        await setKeycloakUserEnabled(target.keycloakId, target.status === "ACTIVE");
+      } catch (rollbackErr) {
+        console.error(
+          `Failed to restore Keycloak enabled=${target.status === "ACTIVE"} for ${target.keycloakId} after a Postgres failure:`,
+          rollbackErr
+        );
+      }
+      console.error("Failed to update user status:", err);
+      return NextResponse.json(
+        { error: "Failed to update the user record; the Keycloak change was rolled back" },
+        { status: 500 }
+      );
+    }
 
     return NextResponse.json(user);
   }
@@ -80,20 +106,26 @@ export async function PATCH(
     roleId = requestedRoleId;
   }
 
-  const user = await prisma.user.update({
-    where: { id },
-    data: { name, roleId },
-    include: { role: true },
-  });
-
-  await logAudit({
-    actorId: session.user.id,
-    action: `${target.userType}_UPDATED`,
-    details: `Updated ${target.userType.toLowerCase()} "${user.name}"`,
-    targetType: "User",
-    targetId: id,
-    metadata: { name, roleId },
-    ...requestMeta(req),
+  // The edit and its audit row commit together or not at all.
+  const user = await prisma.$transaction(async (tx) => {
+    const updated = await tx.user.update({
+      where: { id },
+      data: { name, roleId },
+      include: { role: true },
+    });
+    await logAudit(
+      {
+        actorId: session.user.id,
+        action: `${target.userType}_UPDATED`,
+        details: `Updated ${target.userType.toLowerCase()} "${updated.name}"`,
+        targetType: "User",
+        targetId: id,
+        metadata: { name, roleId },
+        ...requestMeta(req),
+      },
+      tx
+    );
+    return updated;
   });
 
   return NextResponse.json(user);
@@ -124,18 +156,34 @@ export async function DELETE(
   // Archive, not delete: the Keycloak login above is gone for good (they can
   // never sign in again), but the Postgres row is kept — disabled and
   // stripped from every user-management list — so historical AuditLog rows
-  // that reference this id keep resolving instead of dangling.
-  await prisma.user.update({ where: { id }, data: { archivedAt: new Date(), status: "DISABLED" } });
-
-  await logAudit({
-    actorId: session.user.id,
-    action: `${target.userType}_ARCHIVED`,
-    details: `Archived ${target.userType.toLowerCase()} "${target.name}" (${target.email}) — Keycloak login removed, portal record kept for audit history`,
-    targetType: "User",
-    targetId: id,
-    metadata: { email: target.email },
-    ...requestMeta(req),
-  });
+  // that reference this id keep resolving instead of dangling. The archive
+  // and its audit row commit together or not at all.
+  try {
+    await prisma.$transaction(async (tx) => {
+      await tx.user.update({ where: { id }, data: { archivedAt: new Date(), status: "DISABLED" } });
+      await logAudit(
+        {
+          actorId: session.user.id,
+          action: `${target.userType}_ARCHIVED`,
+          details: `Archived ${target.userType.toLowerCase()} "${target.name}" (${target.email}) — Keycloak login removed, portal record kept for audit history`,
+          targetType: "User",
+          targetId: id,
+          metadata: { email: target.email },
+          ...requestMeta(req),
+        },
+        tx
+      );
+    });
+  } catch (err) {
+    // A deleted Keycloak login can't be restored, so there's no compensating
+    // action here — but a retry heals it: the row is still unarchived, and
+    // deleteKeycloakUser treats Keycloak's 404 as already-done.
+    console.error(`Keycloak login ${target.keycloakId} removed but archiving the portal row failed:`, err);
+    return NextResponse.json(
+      { error: "The login was removed but the portal record couldn't be archived — try again" },
+      { status: 500 }
+    );
+  }
 
   return NextResponse.json({ success: true });
 }

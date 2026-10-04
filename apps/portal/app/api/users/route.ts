@@ -64,25 +64,41 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  // The portal row and its audit row commit together or not at all.
   let user;
   try {
-    user = await prisma.user.create({
-      data: {
-        keycloakId,
-        name,
-        email,
-        userType: targetType,
-        roleId: targetType === "EMPLOYEE" ? roleId : null,
-        createdById: session.user.id,
-      },
-      include: { role: true },
+    user = await prisma.$transaction(async (tx) => {
+      const created = await tx.user.create({
+        data: {
+          keycloakId,
+          name,
+          email,
+          userType: targetType,
+          roleId: targetType === "EMPLOYEE" ? roleId : null,
+          createdById: session.user.id,
+        },
+        include: { role: true },
+      });
+      await logAudit(
+        {
+          actorId: session.user.id,
+          action: `${targetType}_CREATED`,
+          details: `Created ${targetType.toLowerCase()} "${name}" (${email})`,
+          targetType: "User",
+          targetId: created.id,
+          metadata: { userType: targetType, name, email, roleId: created.roleId },
+          ...requestMeta(req),
+        },
+        tx
+      );
+      return created;
     });
   } catch (err) {
     // Compensating action: the Keycloak account above already exists, so a
-    // failure here would otherwise leave an orphaned login with no matching
-    // portal account. Roll it back rather than leave that dangling — if the
-    // rollback itself fails, log the orphaned id for manual cleanup rather
-    // than silently swallowing it.
+    // failure here (the row or its audit entry) would otherwise leave an
+    // orphaned login with no matching portal account. Roll it back rather
+    // than leave that dangling — if the rollback itself fails, log the
+    // orphaned id for manual cleanup rather than silently swallowing it.
     try {
       await deleteKeycloakUser(keycloakId);
     } catch (rollbackErr) {
@@ -97,16 +113,6 @@ export async function POST(req: NextRequest) {
       { status: 500 }
     );
   }
-
-  await logAudit({
-    actorId: session.user.id,
-    action: `${targetType}_CREATED`,
-    details: `Created ${targetType.toLowerCase()} "${name}" (${email})`,
-    targetType: "User",
-    targetId: user.id,
-    metadata: { userType: targetType, name, email, roleId: user.roleId },
-    ...requestMeta(req),
-  });
 
   return NextResponse.json({ ...user, tempPassword }, { status: 201 });
 }

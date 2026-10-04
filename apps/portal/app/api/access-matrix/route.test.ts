@@ -1,5 +1,5 @@
 import { beforeEach, expect, it, vi } from "vitest";
-import { fakeSession, jsonRequest, mockLiveCallerFromSession } from "@/test/helpers";
+import { fakeSession, jsonRequest, mockLiveCallerFromSession, mockTransactions } from "@/test/helpers";
 
 const { authMock, prismaMock, logAuditMock } = vi.hoisted(() => ({
   authMock: vi.fn(),
@@ -22,6 +22,7 @@ const URL_ = "http://localhost:3000/api/access-matrix";
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockTransactions(prismaMock);
   authMock.mockResolvedValue(fakeSession({ userType: "ADMIN" }));
   prismaMock.role.findUnique.mockResolvedValue({ id: "r1", name: "HR" });
   prismaMock.application.findUnique.mockResolvedValue({ id: "a1", name: "Finance" });
@@ -66,7 +67,8 @@ it("grants access via upsert", async () => {
   });
   expect(prismaMock.roleAccess.deleteMany).not.toHaveBeenCalled();
   expect(logAuditMock).toHaveBeenCalledWith(
-    expect.objectContaining({ actorId: "user-1", action: "ACCESS_GRANTED", details: expect.stringContaining("HR") })
+    expect.objectContaining({ actorId: "user-1", action: "ACCESS_GRANTED", details: expect.stringContaining("HR") }),
+    prismaMock
   );
 });
 
@@ -85,6 +87,7 @@ it("revokes access via deleteMany", async () => {
       actorId: "user-1",
       action: "ACCESS_REVOKED",
       details: expect.stringContaining("Finance"),
-    })
+    }),
+    prismaMock
   );
 });

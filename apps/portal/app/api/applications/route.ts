@@ -40,18 +40,22 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const application = await prisma.application.create({
-    data: { name, url, description },
-  });
-
-  await logAudit({
-    actorId: session.user.id,
-    action: "APPLICATION_CREATED",
-    details: `Created application "${name}"`,
-    targetType: "Application",
-    targetId: application.id,
-    metadata: { name, url },
-    ...requestMeta(req),
+  // The application and its audit row commit together or not at all.
+  const application = await prisma.$transaction(async (tx) => {
+    const created = await tx.application.create({ data: { name, url, description } });
+    await logAudit(
+      {
+        actorId: session.user.id,
+        action: "APPLICATION_CREATED",
+        details: `Created application "${name}"`,
+        targetType: "Application",
+        targetId: created.id,
+        metadata: { name, url },
+        ...requestMeta(req),
+      },
+      tx
+    );
+    return created;
   });
 
   return NextResponse.json(application, { status: 201 });

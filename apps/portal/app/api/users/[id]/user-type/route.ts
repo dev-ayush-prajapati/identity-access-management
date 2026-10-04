@@ -53,20 +53,26 @@ export async function PATCH(
     }
   }
 
-  const user = await prisma.user.update({
-    where: { id },
-    data: { userType },
-    include: { role: true },
-  });
-
-  await logAudit({
-    actorId: session.user.id,
-    action: userType === "SUPERADMIN" ? "USER_PROMOTED" : "USER_DEMOTED",
-    details: `${userType === "SUPERADMIN" ? "Promoted" : "Demoted"} "${target.name}" from ${target.userType} to ${userType}`,
-    targetType: "User",
-    targetId: id,
-    metadata: { from: target.userType, to: userType },
-    ...requestMeta(req),
+  // The promotion/demotion and its audit row commit together or not at all.
+  const user = await prisma.$transaction(async (tx) => {
+    const updated = await tx.user.update({
+      where: { id },
+      data: { userType },
+      include: { role: true },
+    });
+    await logAudit(
+      {
+        actorId: session.user.id,
+        action: userType === "SUPERADMIN" ? "USER_PROMOTED" : "USER_DEMOTED",
+        details: `${userType === "SUPERADMIN" ? "Promoted" : "Demoted"} "${target.name}" from ${target.userType} to ${userType}`,
+        targetType: "User",
+        targetId: id,
+        metadata: { from: target.userType, to: userType },
+        ...requestMeta(req),
+      },
+      tx
+    );
+    return updated;
   });
 
   return NextResponse.json(user);

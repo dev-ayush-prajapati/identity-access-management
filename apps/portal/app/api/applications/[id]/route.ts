@@ -27,9 +27,25 @@ export async function PATCH(
     return NextResponse.json({ error: "url must be a valid http(s) URL" }, { status: 400 });
   }
 
+  // The update and its audit row commit together or not at all.
   let application;
   try {
-    application = await prisma.application.update({ where: { id }, data });
+    application = await prisma.$transaction(async (tx) => {
+      const updated = await tx.application.update({ where: { id }, data });
+      await logAudit(
+        {
+          actorId: session.user.id,
+          action: "APPLICATION_UPDATED",
+          details: `Updated application "${updated.name}"`,
+          targetType: "Application",
+          targetId: id,
+          metadata: data,
+          ...requestMeta(req),
+        },
+        tx
+      );
+      return updated;
+    });
   } catch (err) {
     const code = prismaErrorCode(err);
     if (code === "P2025") {
@@ -45,16 +61,6 @@ export async function PATCH(
     }
     throw err;
   }
-
-  await logAudit({
-    actorId: session.user.id,
-    action: "APPLICATION_UPDATED",
-    details: `Updated application "${application.name}"`,
-    targetType: "Application",
-    targetId: id,
-    metadata: data,
-    ...requestMeta(req),
-  });
 
   return NextResponse.json(application);
 }
@@ -77,21 +83,29 @@ export async function DELETE(
     );
   }
 
-  const application = await prisma.application.delete({ where: { id } }).catch(nullIfNotFound);
+  // The delete and its audit row commit together or not at all.
+  const application = await prisma.$transaction(async (tx) => {
+    const deleted = await tx.application.delete({ where: { id } }).catch(nullIfNotFound);
+    if (deleted) {
+      await logAudit(
+        {
+          actorId: session.user.id,
+          action: "APPLICATION_DELETED",
+          details: `Deleted application "${deleted.name}"`,
+          targetType: "Application",
+          targetId: id,
+          metadata: { name: deleted.name },
+          ...requestMeta(req),
+        },
+        tx
+      );
+    }
+    return deleted;
+  });
 
   if (!application) {
     return NextResponse.json({ error: "Application not found" }, { status: 404 });
   }
-
-  await logAudit({
-    actorId: session.user.id,
-    action: "APPLICATION_DELETED",
-    details: `Deleted application "${application.name}"`,
-    targetType: "Application",
-    targetId: id,
-    metadata: { name: application.name },
-    ...requestMeta(req),
-  });
 
   return NextResponse.json({ success: true });
 }

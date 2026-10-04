@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fakeSession, jsonRequest, paramsOf } from "@/test/helpers";
+import { fakeSession, jsonRequest, paramsOf, mockTransactions } from "@/test/helpers";
 
 const { authMock, prismaMock, userLookupMock, logAuditMock } = vi.hoisted(() => ({
   authMock: vi.fn(),
@@ -38,6 +38,7 @@ const superAdmin = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockTransactions(prismaMock);
   authMock.mockResolvedValue(fakeSession({ userType: "SUPERADMIN", id: "boss-1" }));
   prismaMock.user.findUnique.mockImplementation(async (args: { where: { id: string } }) => {
     const session = await authMock();
@@ -161,7 +162,8 @@ describe("PATCH /api/users/[id]/user-type", () => {
         actorId: "boss-1",
         action: "USER_PROMOTED",
         details: expect.stringContaining("Bob"),
-      })
+      }),
+      prismaMock
     );
   });
 
@@ -181,7 +183,8 @@ describe("PATCH /api/users/[id]/user-type", () => {
         actorId: "boss-1",
         action: "USER_DEMOTED",
         details: expect.stringContaining("Cara"),
-      })
+      }),
+      prismaMock
     );
   });
 });

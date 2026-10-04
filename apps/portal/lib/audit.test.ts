@@ -49,6 +49,25 @@ describe("logAudit", () => {
     });
   });
 
+  // The caller's transaction, when given, carries both the actor lookup and
+  // the insert — so the audit row commits or rolls back with the change it
+  // records, instead of being a second, independently-failing write.
+  it("writes through the caller's transaction client when one is passed", async () => {
+    const tx = {
+      user: { findUnique: vi.fn().mockResolvedValue({ name: "Amy", email: "amy@x.com" }) },
+      auditLog: { create: vi.fn() },
+    };
+
+    await logAudit({ actorId: "u1", action: "ROLE_CREATED" }, tx as never);
+
+    expect(tx.user.findUnique).toHaveBeenCalled();
+    expect(tx.auditLog.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ action: "ROLE_CREATED", actorName: "Amy" }),
+    });
+    expect(prismaMock.user.findUnique).not.toHaveBeenCalled();
+    expect(prismaMock.auditLog.create).not.toHaveBeenCalled();
+  });
+
   it("writes null actor fields and skips the lookup when actorId is null", async () => {
     await logAudit({ actorId: null, action: "AUTHZ_DENIED", outcome: "DENIED" });
 

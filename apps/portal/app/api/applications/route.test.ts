@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fakeSession, jsonRequest, mockLiveCallerFromSession } from "@/test/helpers";
+import { fakeSession, jsonRequest, mockLiveCallerFromSession, mockTransactions } from "@/test/helpers";
 
 const { authMock, prismaMock, logAuditMock } = vi.hoisted(() => ({
   authMock: vi.fn(),
@@ -29,6 +29,7 @@ beforeEach(() => {
 describe("GET /api/applications", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockTransactions(prismaMock);
   });
 
   it("403s for an Employee", async () => {
@@ -110,7 +111,8 @@ describe("POST /api/applications", () => {
         actorId: "user-1",
         action: "APPLICATION_CREATED",
         details: expect.stringContaining("Finance"),
-      })
+      }),
+      prismaMock
     );
   });
 });

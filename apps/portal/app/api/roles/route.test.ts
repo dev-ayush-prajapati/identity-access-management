@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fakeSession, jsonRequest, mockLiveCallerFromSession } from "@/test/helpers";
+import { fakeSession, jsonRequest, mockLiveCallerFromSession, mockTransactions } from "@/test/helpers";
 
 const { authMock, prismaMock, logAuditMock } = vi.hoisted(() => ({
   authMock: vi.fn(),
@@ -25,6 +25,7 @@ const URL_ = "http://localhost:3000/api/roles";
 beforeEach(() => {
   vi.clearAllMocks();
   mockLiveCallerFromSession(authMock, prismaMock.user.findUnique);
+  mockTransactions(prismaMock);
 });
 
 describe("GET /api/roles", () => {
@@ -82,8 +83,18 @@ describe("POST /api/roles", () => {
     const res = await POST(jsonRequest(URL_, "POST", { name: "HR" }));
 
     expect(res.status).toBe(201);
+    // Second argument = the transaction: the role and its audit row commit together.
     expect(logAuditMock).toHaveBeenCalledWith(
-      expect.objectContaining({ actorId: "user-1", action: "ROLE_CREATED", details: expect.stringContaining("HR") })
+      expect.objectContaining({ actorId: "user-1", action: "ROLE_CREATED", details: expect.stringContaining("HR") }),
+      prismaMock
     );
+  });
+
+  it("fails the request (rolling the create back) when the audit row can't be written", async () => {
+    prismaMock.role.findUnique.mockResolvedValue(null);
+    prismaMock.role.create.mockResolvedValue({ id: "r1", name: "HR" });
+    logAuditMock.mockRejectedValueOnce(new Error("audit down"));
+
+    await expect(POST(jsonRequest(URL_, "POST", { name: "HR" }))).rejects.toThrow("audit down");
   });
 });
