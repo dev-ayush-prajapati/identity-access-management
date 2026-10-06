@@ -3,9 +3,10 @@
 // docker-compose.yml starts Keycloak with --import-realm, which only imports a
 // realm that doesn't exist yet — so edits to the export never reach an
 // existing install. This closes that gap, idempotently (safe to re-run):
-//   1. realm settings (everything in the export except clients/users)
-//   2. clients — created if missing, updated if present (export wins)
-//   3. service-account role grants (users[] entries with serviceAccountClientId)
+//   1. realm settings (everything in the export except clients/users/components)
+//   2. user profile (the one component the export carries)
+//   3. clients — created if missing, updated if present (export wins)
+//   4. service-account role grants (users[] entries with serviceAccountClientId)
 //
 // Operator-only. It signs in as Keycloak's master admin from the ROOT .env —
 // the one place outside the container that login is used. The portal app
@@ -18,7 +19,13 @@ import { readFileSync } from "node:fs";
 
 type ClientRep = { clientId: string; id?: string; attributes?: Record<string, string> } & Record<string, unknown>;
 type UserRep = { username: string; serviceAccountClientId?: string; clientRoles?: Record<string, string[]> };
-type RealmExport = { realm: string; clients?: ClientRep[]; users?: UserRep[] } & Record<string, unknown>;
+type ComponentRep = { config?: Record<string, string[]> };
+type RealmExport = {
+  realm: string;
+  clients?: ClientRep[];
+  users?: UserRep[];
+  components?: Record<string, ComponentRep[]>;
+} & Record<string, unknown>;
 
 function requireEnv(name: string): string {
   const value = process.env[name];
@@ -79,7 +86,7 @@ async function findClient(clientId: string): Promise<ClientRep | undefined> {
   return client;
 }
 
-const { clients = [], users = [], ...settings } = exported;
+const { clients = [], users = [], components = {}, ...settings } = exported;
 
 console.log(`Syncing keycloak/realm-export.json → ${baseUrl} (realm ${realm})\n`);
 
@@ -87,7 +94,16 @@ console.log(`Syncing keycloak/realm-export.json → ${baseUrl} (realm ${realm})\
 await api("PUT", "", settings);
 console.log(`  = realm settings (${Object.keys(settings).join(", ")})`);
 
-// 2. Clients.
+// 2. User profile. An import reads it from this component, but the realm PUT
+// above ignores components — it has its own endpoint, taking the same JSON.
+const userProfile =
+  components["org.keycloak.userprofile.UserProfileProvider"]?.[0]?.config?.["kc.user.profile.config"]?.[0];
+if (userProfile) {
+  await api("PUT", "/users/profile", JSON.parse(userProfile));
+  console.log("  = user profile");
+}
+
+// 3. Clients.
 for (const client of clients) {
   const existing = await findClient(client.clientId);
   if (!existing) {
@@ -103,7 +119,7 @@ for (const client of clients) {
   }
 }
 
-// 3. Service-account role grants. Re-granting a role it already holds is a no-op.
+// 4. Service-account role grants. Re-granting a role it already holds is a no-op.
 for (const user of users) {
   if (!user.serviceAccountClientId || !user.clientRoles) continue;
 

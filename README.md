@@ -31,7 +31,7 @@ cp apps/portal/.env.example apps/portal/.env
 cp apps/finance-app/.env.example apps/finance-app/.env
 ```
 
-In `apps/portal/.env`, set `SUPERADMIN_NAME` / `SUPERADMIN_EMAIL` / `SUPERADMIN_PASSWORD` to real values, and generate a real `AUTH_SECRET` for each app (`openssl rand -base64 32`) — the checked-in `.env.example` values are placeholders only.
+In `apps/portal/.env`, set `SUPERADMIN_NAME` / `SUPERADMIN_EMAIL` / `SUPERADMIN_PASSWORD` to real values (the password needs 12+ characters and can't be the email — the realm's password policy), and generate a real `AUTH_SECRET` for each app (`openssl rand -base64 32`) — the checked-in `.env.example` values are placeholders only.
 
 **2. Start Postgres + Keycloak:**
 

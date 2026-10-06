@@ -112,7 +112,8 @@ export async function createKeycloakUser({
   return keycloakId;
 }
 
-export async function setKeycloakUserEnabled(keycloakId: string, enabled: boolean): Promise<void> {
+// Partial update: Keycloak changes only the fields sent.
+async function updateKeycloakUser(keycloakId: string, fields: object, action: string): Promise<void> {
   const { baseUrl, realm, token } = await adminSession();
 
   const res = await fetch(`${baseUrl}/admin/realms/${realm}/users/${keycloakId}`, {
@@ -121,15 +122,25 @@ export async function setKeycloakUserEnabled(keycloakId: string, enabled: boolea
       Authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ enabled }),
+    body: JSON.stringify(fields),
   });
 
   if (!res.ok) {
-    console.error(
-      `Keycloak ${enabled ? "enable" : "disable"} user failed: ${res.status} ${await res.text()}`
-    );
-    throw new Error(`Failed to ${enabled ? "enable" : "disable"} the Keycloak account`);
+    console.error(`Keycloak ${action} user failed: ${res.status} ${await res.text()}`);
+    throw new Error(`Failed to ${action} the Keycloak account`);
   }
+}
+
+export async function setKeycloakUserEnabled(keycloakId: string, enabled: boolean): Promise<void> {
+  await updateKeycloakUser(keycloakId, { enabled }, enabled ? "enable" : "disable");
+}
+
+// The portal keeps one `name`; Keycloak's token `name` claim (what finance-app
+// shows) is firstName + lastName. So the whole name goes in firstName and
+// lastName is cleared — the realm's user profile makes lastName optional,
+// otherwise Keycloak would demand one at the next sign-in.
+export async function setKeycloakUserName(keycloakId: string, name: string): Promise<void> {
+  await updateKeycloakUser(keycloakId, { firstName: name, lastName: "" }, "rename");
 }
 
 export async function resetKeycloakUserPassword(keycloakId: string, password: string): Promise<void> {

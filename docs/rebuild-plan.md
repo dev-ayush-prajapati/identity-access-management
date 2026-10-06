@@ -29,7 +29,7 @@ below.
 | 2 | Real enforcement | ✅ Done, verified live in browser. The 404 was dev-server port drift, now fixed |
 | 3 | Joiner / mover / leaver | ✅ Done, verified live in browser |
 | 4 | Audit log that deserves the name | ✅ Done, verified live in browser (structured fields, new events, pagination, atomic audit writes, hardened CSV export) |
-| 5 | Keycloak done properly | ⬜ Not started |
+| 5 | Keycloak done properly | 🟡 In progress — 5.1 and 5.2 done, verified live; 5.3–5.5 not started |
 | 6 | Integrity + UI correctness | ⬜ Not started |
 | 7 | Presentation honesty | ⬜ Not started |
 
@@ -418,7 +418,7 @@ browser pass:
 | # | Sub-step | Status |
 |---|---|---|
 | 5.1 | Least-privilege admin: realm-scoped `portal-admin` service account replaces the master-admin login in the app and scripts; `scripts/sync-keycloak-realm.ts` applies `realm-export.json` to a running Keycloak (`--import-realm` skips an existing realm) | ✅ Done, verified live |
-| 5.2 | Realm hardening: password policy, brute-force lockout, session/token lifespans; `review-findings.md` #11 (optional last name) | ⬜ |
+| 5.2 | Realm hardening: password policy, brute-force lockout, session/token lifespans; `review-findings.md` #11 (optional last name) | ✅ Done, verified live |
 | 5.3 | MFA: TOTP **required for SuperAdmin and Admin**, opt-in for Employees | ⬜ |
 | 5.4 | `review-findings.md` #9: finance-app authenticates to the PDP with its own Keycloak service-account token; `Application.clientId` replaces the self-reported origin and the shared secret | ⬜ |
 | 5.5 | Keycloak storage moves from embedded H2 to a `keycloak` database in the existing Postgres — **last, behind a volume backup**, full realm+user export/import | ⬜ |
@@ -451,6 +451,80 @@ the client list came back empty (no secrets visible); the realm list showed
 only this realm's name. Sync re-run changed nothing. Browser: an Admin created,
 password-reset, disabled, enabled, and deleted an Employee — five audit rows,
 Keycloak login gone afterwards.
+
+**5.2 — realm hardening (2026-10-06, `feat/keycloak-realm-hardening`).**
+Gate green (portal lint, `tsc --noEmit`, 213 tests, build; finance-app lint,
+`tsc --noEmit`, build). Synced to the dev Keycloak.
+
+- **Password policy** — `length(12) and notUsername and notEmail and
+  passwordHistory(3)`. NIST 800-63B style: length over composition rules
+  (no forced upper/digit/symbol). Generated temp passwords are 12 chars, so
+  they pass; `keycloak-admin.test.ts` fails if the policy's `length(N)` ever
+  outgrows them. `.env.example`'s `SUPERADMIN_PASSWORD` placeholder was 8
+  chars — a fresh bootstrap would have been rejected; now 16. Not done: a
+  breached-password blocklist (`passwordBlacklist` needs a file mounted into
+  the container).
+- **Brute-force lockout** — on, 5 failures → temporary lockout starting at
+  60s, growing to 15 min max; failure count resets after 12h. Temporary, not
+  permanent: permanent lockout lets anyone who knows an email lock that
+  person out. Keycloak's quick-login check (2 failures within 1s → 60s wait,
+  default) also applies — scripted attacks trip it before the 5th.
+- **Session/token lifespans** — pinned explicitly (were Keycloak defaults):
+  SSO idle 30 min, SSO max 10h, access token 5 min.
+- **App sessions now end with the SSO session** — both apps' Auth.js
+  sessions defaulted to 30 days, so the realm's 10h max signed nobody out of
+  either app. And `session.maxAge` alone isn't a cap: Auth.js re-signs the
+  JWT cookie on every read, so it only ends a session left *idle* that long.
+  The cap is now counted from Keycloak's `auth_time` (portal
+  `lib/session-lifetime.ts`, inlined in finance-app's `auth.ts`); the `jwt`
+  callback returns `null` past it, which clears the cookie. An SSO sign-in
+  into the second app inherits the *original* `auth_time`, so neither app
+  outlives the SSO session. A cookie with no `authTime` (minted before this)
+  fails closed — **everyone signed in today is signed out once.** In the
+  portal the check sits in both `auth.config.ts` (middleware) and `auth.ts`,
+  since the latter's `jwt` replaces the former's.
+- **#11, optional last name** — the realm's user profile no longer requires
+  `lastName`, so first sign-in stops demanding one. Lives in the export as
+  Keycloak's own `UserProfileProvider` component (stringified JSON — that's
+  the import format); the sync script now PUTs it to `/users/profile`, since
+  the realm PUT ignores components.
+- **Renames reach Keycloak** (found while scoping #11) — editing a user's
+  name only updated Postgres, so finance-app (which shows Keycloak's name)
+  kept the old one. `PATCH /api/users/[id]` now renames in Keycloak first
+  (`setKeycloakUserName`: whole name in `firstName`, `lastName` cleared) and
+  restores the old Keycloak name if the Postgres transaction fails — same
+  ordering/compensation as enable/disable. Role-only edits skip Keycloak. A
+  name Keycloak's person-name validator rejects (special characters such as
+  `<`, `>`, `&`, `"`) now fails the rename with a 502 instead of saving in
+  Postgres only — same as create already did. finance-app shows the new name
+  from its next sign-in.
+
+**Verified against a real Keycloak (2026-10-06):** fresh `--import-realm` of
+the export into a throwaway 26.0 container — settings applied, `lastName`
+optional, `${…}` labels intact. Against that same instance: an 8-char and an
+email-as-password create were refused, a generated temp password accepted,
+an 8-char reset refused; rename set `firstName`, cleared `lastName`, left
+`email` alone; 4 spaced failures didn't lock, the 5th did, and the right
+password was then refused; a real authorization-code login's `id_token`
+carried `auth_time`, and a finance-app SSO login 3s later carried the same
+value. Sync ran twice there, then against the dev Keycloak.
+
+**Verified live in the browser 2026-10-07** (two windows: Admin normal,
+Employee incognito): the first visit after the change landed on the sign-in
+screen — the pre-cap session was rejected — and the re-login shows in the
+audit log; a new Employee's first sign-in refused a 10-char password and the
+email-as-password, accepted a valid one, and asked for no last name;
+finance-app (via SSO, no password) showed the name with nothing appended; an
+Admin rename showed up in finance-app on its next sign-in; 5 wrong passwords
+locked the account (right password refused), and it worked again a minute
+later.
+
+**Existing names reconciled (2026-10-07):** a one-off pass, as the
+service account, set every live user's Keycloak `firstName` to their Postgres
+name and cleared `lastName` — 8 of 15 had drifted (invented last names like
+"Admin"/"Demo", and `testadmin`'s Keycloak first name was `Admin@123`). Re-run
+showed all matching. Not kept as a script: new drift can't start any more
+(creates set only `firstName`, renames go through Keycloak).
 
 Original scope note: Replace the master-realm admin password grant
 (`lib/keycloak-admin.ts` authenticates as Keycloak's own `admin` user on every

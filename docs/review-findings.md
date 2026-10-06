@@ -28,7 +28,7 @@ problem.
 | 8 | Renaming to a duplicate name returns 404 "not found" | Low | ✅ Fixed, verified live 2026-10-04 (`fix/review-findings`) |
 | 9 | PDP trusts a self-reported origin + one shared secret | Design | ⬜ Open (fits Phase 5) |
 | 10 | Minor hardening: unguarded `req.json()`, no security headers, no Origin check | Low | ⬜ Open |
-| 11 | New users are forced to invent a Keycloak last name; finance-app shows it | Low | ⬜ Open (found 2026-10-04 browser pass) |
+| 11 | New users are forced to invent a Keycloak last name; finance-app shows it | Low | ✅ Fixed, verified live 2026-10-07 (`feat/keycloak-realm-hardening`, Phase 5.2) — lastName optional, renames reach Keycloak, existing names reconciled |
 
 ### Fix log — `fix/review-findings` (2026-10-02)
 

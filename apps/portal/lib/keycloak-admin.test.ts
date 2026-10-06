@@ -1,5 +1,11 @@
+import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { findKeycloakUserIdByEmail, setKeycloakUserEnabled } from "./keycloak-admin";
+import {
+  findKeycloakUserIdByEmail,
+  generateTempPassword,
+  setKeycloakUserEnabled,
+  setKeycloakUserName,
+} from "./keycloak-admin";
 
 // The one thing this wrapper must get right beyond the REST shapes: which
 // identity it acts as. It used to be Keycloak's master `admin` (power over the
@@ -73,5 +79,43 @@ describe("findKeycloakUserIdByEmail", () => {
       .mockResolvedValueOnce(new Response("[]", { status: 200 }));
 
     await expect(findKeycloakUserIdByEmail("x@y.com")).resolves.toBeNull();
+  });
+});
+
+describe("setKeycloakUserName", () => {
+  // finance-app shows Keycloak's firstName + lastName; the portal has one name.
+  it("puts the whole name in firstName and clears lastName", async () => {
+    fetchMock
+      .mockResolvedValueOnce(tokenResponse())
+      .mockResolvedValueOnce(new Response(null, { status: 204 }));
+
+    await setKeycloakUserName("kc-1", "Rohan Mehta");
+
+    const [url, init] = fetchMock.mock.calls[1];
+    expect(url).toBe("http://kc:8080/admin/realms/iam-portal/users/kc-1");
+    expect(init.method).toBe("PUT");
+    expect(JSON.parse(init.body)).toEqual({ firstName: "Rohan Mehta", lastName: "" });
+  });
+
+  it("throws when Keycloak rejects the rename", async () => {
+    fetchMock
+      .mockResolvedValueOnce(tokenResponse())
+      .mockResolvedValueOnce(new Response("bad name", { status: 400 }));
+
+    await expect(setKeycloakUserName("kc-1", "x")).rejects.toThrow("Failed to rename the Keycloak account");
+  });
+});
+
+describe("generateTempPassword", () => {
+  // Keycloak rejects a password that breaks the realm's policy, so a temp
+  // password shorter than its length(N) would fail every user create/reset.
+  it("meets the realm password policy's minimum length", () => {
+    const realm = JSON.parse(
+      readFileSync(new URL("../../../keycloak/realm-export.json", import.meta.url), "utf8")
+    ) as { passwordPolicy: string };
+    const minLength = Number(/length\((\d+)\)/.exec(realm.passwordPolicy)?.[1]);
+
+    expect(minLength).toBeGreaterThan(0);
+    expect(generateTempPassword().length).toBeGreaterThanOrEqual(minLength);
   });
 });

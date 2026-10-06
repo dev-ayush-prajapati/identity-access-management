@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireUserType } from "@/lib/api-auth";
 import { logAudit, requestMeta } from "@/lib/audit";
-import { deleteKeycloakUser, setKeycloakUserEnabled } from "@/lib/keycloak-admin";
+import { deleteKeycloakUser, setKeycloakUserEnabled, setKeycloakUserName } from "@/lib/keycloak-admin";
 import type { UserType } from "@/lib/generated/prisma";
 
 function managedUserType(callerType: UserType): UserType {
@@ -106,27 +106,64 @@ export async function PATCH(
     roleId = requestedRoleId;
   }
 
+  // A rename goes to Keycloak first, same ordering as status: other apps
+  // (finance-app) show Keycloak's name, not ours, so the two must not drift.
+  const renamed = name !== target.name;
+  if (renamed) {
+    try {
+      await setKeycloakUserName(target.keycloakId, name);
+    } catch (err) {
+      return NextResponse.json(
+        { error: err instanceof Error ? err.message : "Failed to update Keycloak account" },
+        { status: 502 }
+      );
+    }
+  }
+
   // The edit and its audit row commit together or not at all.
-  const user = await prisma.$transaction(async (tx) => {
-    const updated = await tx.user.update({
-      where: { id },
-      data: { name, roleId },
-      include: { role: true },
+  let user;
+  try {
+    user = await prisma.$transaction(async (tx) => {
+      const updated = await tx.user.update({
+        where: { id },
+        data: { name, roleId },
+        include: { role: true },
+      });
+      await logAudit(
+        {
+          actorId: session.user.id,
+          action: `${target.userType}_UPDATED`,
+          details: `Updated ${target.userType.toLowerCase()} "${updated.name}"`,
+          targetType: "User",
+          targetId: id,
+          metadata: { name, roleId },
+          ...requestMeta(req),
+        },
+        tx
+      );
+      return updated;
     });
-    await logAudit(
+  } catch (err) {
+    if (renamed) {
+      try {
+        await setKeycloakUserName(target.keycloakId, target.name);
+      } catch (rollbackErr) {
+        console.error(
+          `Failed to restore Keycloak name "${target.name}" for ${target.keycloakId} after a Postgres failure:`,
+          rollbackErr
+        );
+      }
+    }
+    console.error("Failed to update user:", err);
+    return NextResponse.json(
       {
-        actorId: session.user.id,
-        action: `${target.userType}_UPDATED`,
-        details: `Updated ${target.userType.toLowerCase()} "${updated.name}"`,
-        targetType: "User",
-        targetId: id,
-        metadata: { name, roleId },
-        ...requestMeta(req),
+        error: renamed
+          ? "Failed to update the user record; the Keycloak change was rolled back"
+          : "Failed to update the user record",
       },
-      tx
+      { status: 500 }
     );
-    return updated;
-  });
+  }
 
   return NextResponse.json(user);
 }
