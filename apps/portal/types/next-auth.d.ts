@@ -17,5 +17,6 @@ declare module "next-auth/jwt" {
     userType?: UserType;
     roleId?: string | null;
     idToken?: string;
+    authTime?: number;
   }
 }

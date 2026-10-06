@@ -1,8 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fakeSession, jsonRequest, paramsOf, mockTransactions } from "@/test/helpers";
 
-const { authMock, prismaMock, userLookupMock, logAuditMock, deleteKeycloakUserMock, setKeycloakUserEnabledMock } =
-  vi.hoisted(() => ({
+const {
+  authMock,
+  prismaMock,
+  userLookupMock,
+  logAuditMock,
+  deleteKeycloakUserMock,
+  setKeycloakUserEnabledMock,
+  setKeycloakUserNameMock,
+} = vi.hoisted(() => ({
     authMock: vi.fn(),
     prismaMock: {
       user: {
@@ -24,6 +31,7 @@ const { authMock, prismaMock, userLookupMock, logAuditMock, deleteKeycloakUserMo
     logAuditMock: vi.fn(),
     deleteKeycloakUserMock: vi.fn(),
     setKeycloakUserEnabledMock: vi.fn(),
+    setKeycloakUserNameMock: vi.fn(),
   }));
 
 vi.mock("@/auth", () => ({ auth: authMock }));
@@ -32,6 +40,7 @@ vi.mock("@/lib/audit", () => ({ logAudit: logAuditMock, requestMeta: () => ({}) 
 vi.mock("@/lib/keycloak-admin", () => ({
   deleteKeycloakUser: deleteKeycloakUserMock,
   setKeycloakUserEnabled: setKeycloakUserEnabledMock,
+  setKeycloakUserName: setKeycloakUserNameMock,
 }));
 
 import { PATCH, DELETE } from "./route";
@@ -153,6 +162,7 @@ describe("PATCH /api/users/[id]", () => {
     );
 
     expect(res.status).toBe(200);
+    expect(setKeycloakUserNameMock).toHaveBeenCalledWith("kc-456", "Amy Smith");
     expect(prismaMock.user.update).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id: "u1" },
@@ -192,6 +202,47 @@ describe("PATCH /api/users/[id]", () => {
       }),
       prismaMock
     );
+  });
+
+  it("leaves Keycloak alone when the name didn't change (role-only edit)", async () => {
+    userLookupMock.mockResolvedValue(employee);
+    prismaMock.role.findUnique.mockResolvedValue({ id: "r2", name: "Finance" });
+    prismaMock.user.update.mockResolvedValue({ ...employee, roleId: "r2" });
+
+    const res = await PATCH(
+      jsonRequest(URL_, "PATCH", { name: "Amy", roleId: "r2" }),
+      paramsOf("u1")
+    );
+
+    expect(res.status).toBe(200);
+    expect(setKeycloakUserNameMock).not.toHaveBeenCalled();
+  });
+
+  it("502s when the Keycloak rename fails, and leaves Postgres untouched", async () => {
+    userLookupMock.mockResolvedValue(employee);
+    setKeycloakUserNameMock.mockRejectedValue(new Error("Failed to rename the Keycloak account"));
+
+    const res = await PATCH(jsonRequest(URL_, "PATCH", { name: "Amy Smith" }), paramsOf("u1"));
+
+    expect(res.status).toBe(502);
+    expect((await res.json()).error).toBe("Failed to rename the Keycloak account");
+    expect(prismaMock.user.update).not.toHaveBeenCalled();
+    expect(logAuditMock).not.toHaveBeenCalled();
+  });
+
+  // Same compensation as status: Keycloak was renamed before the
+  // transaction, so a failed save must put the old name back.
+  it("restores the Keycloak name and 500s when the rename can't be saved with its audit row", async () => {
+    userLookupMock.mockResolvedValue(employee);
+    setKeycloakUserNameMock.mockResolvedValue(undefined);
+    prismaMock.user.update.mockResolvedValue({ ...employee, name: "Amy Smith" });
+    logAuditMock.mockRejectedValueOnce(new Error("audit down"));
+
+    const res = await PATCH(jsonRequest(URL_, "PATCH", { name: "Amy Smith" }), paramsOf("u1"));
+
+    expect(res.status).toBe(500);
+    expect(setKeycloakUserNameMock).toHaveBeenNthCalledWith(1, "kc-456", "Amy Smith");
+    expect(setKeycloakUserNameMock).toHaveBeenNthCalledWith(2, "kc-456", "Amy");
   });
 
   it("404s when the target is archived", async () => {

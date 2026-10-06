@@ -1,6 +1,7 @@
 import type { NextAuthConfig } from "next-auth";
 import Keycloak from "next-auth/providers/keycloak";
 import type { UserType } from "@/lib/generated/prisma";
+import { isPastMaxLifespan, SESSION_MAX_AGE_SECONDS } from "@/lib/session-lifetime";
 
 // Edge-safe config, used directly by middleware. Must not import Prisma —
 // Prisma's client uses Node APIs (node:crypto, process.stdout) that the
@@ -22,7 +23,13 @@ export const authConfig: NextAuthConfig = {
       name: "portal-session-token",
     },
   },
+  session: { maxAge: SESSION_MAX_AGE_SECONDS },
   callbacks: {
+    // Middleware's copy of the cap; auth.ts's jwt callback replaces this one
+    // and applies the same check. null clears the session cookie.
+    jwt({ token }) {
+      return isPastMaxLifespan(token.authTime) ? null : token;
+    },
     session({ session, token }) {
       // Just copies what the Node-only jwt callback (in auth.ts) already
       // put in the token — no DB access here, safe for the Edge runtime.

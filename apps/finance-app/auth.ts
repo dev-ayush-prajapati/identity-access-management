@@ -11,6 +11,13 @@ import { checkAccess } from "@/lib/authz-check";
 // signIn asks the portal live instead of assuming yes. This callback only
 // catches it at login time; middleware.ts re-asks on every request after,
 // so a grant revoked later doesn't linger for the rest of this session.
+
+// Hard cap: ssoSessionMaxLifespan in keycloak/realm-export.json, counted from
+// the Keycloak login (auth_time). Same rule as the portal's
+// lib/session-lifetime.ts (tested there) — session.maxAge alone only ends an
+// idle session, since Auth.js re-signs the cookie on every read.
+const SESSION_MAX_AGE_SECONDS = 10 * 60 * 60;
+
 export const { handlers, auth, signIn, signOut } = NextAuth({
   providers: [
     Keycloak({
@@ -28,6 +35,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       name: "financeapp-session-token",
     },
   },
+  session: { maxAge: SESSION_MAX_AGE_SECONDS },
   callbacks: {
     async signIn({ profile }) {
       if (!profile?.sub) return false;
@@ -37,8 +45,14 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     async jwt({ token, profile }) {
       if (profile?.sub) {
         token.keycloakId = profile.sub;
+        token.authTime =
+          typeof profile.auth_time === "number" ? profile.auth_time : Math.floor(Date.now() / 1000);
       }
-      return token;
+      // null clears the session; no authTime (a pre-cap cookie) fails closed.
+      // Cast: same next-auth/jwt augmentation gap as the session callback below.
+      const authTime = token.authTime as number | undefined;
+      const expired = authTime === undefined || Date.now() / 1000 - authTime > SESSION_MAX_AGE_SECONDS;
+      return expired ? null : token;
     },
     session({ session, token }) {
       // Same Auth.js v5 typing gap the portal's auth.config.ts hit: this
