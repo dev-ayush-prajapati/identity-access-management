@@ -78,7 +78,7 @@ Browser → Next.js API routes (app/api/*) → Prisma → Postgres   [authorizat
 Browser → Keycloak (via Auth.js / NextAuth)                     [identity + credentials only]
 ```
 
-**Keycloak owns identity; Postgres owns authorization.** The `signIn` callback rejects any Keycloak login with no matching `User` row (matched on `keycloakId`) — there is no auto-provisioning. Creating a user therefore means Keycloak account **first** (`lib/keycloak-admin.ts`, random temp password + forced reset), Postgres row second; deleting reverses it. A Keycloak failure must surface as 502 and leave Postgres untouched rather than orphaning a login.
+**Keycloak owns identity; Postgres owns authorization.** The `signIn` callback rejects any Keycloak login with no matching `User` row (matched on `keycloakId`) — there is no auto-provisioning. Creating a user therefore means Keycloak account **first** (`lib/keycloak-admin.ts`, random temp password + forced reset), Postgres row second; deleting reverses it. A Keycloak failure must surface as 502 and leave Postgres untouched rather than orphaning a login. Renames follow the same order (Keycloak `firstName` = the full name, `lastName` cleared) — finance-app shows Keycloak's name, not Postgres's.
 
 Two orthogonal permission dimensions — don't conflate them:
 
@@ -93,6 +93,8 @@ Tier rule: the tier a caller manages is **derived from the caller's own `userTyp
 
 - `auth.config.ts` — **edge-safe**. Providers + the DB-free `session` callback. Imported directly by `middleware.ts`. **Must never import Prisma**: Prisma's client needs `node:crypto`/`process.stdout`, which the Edge runtime lacks, so pulling it in 500s every protected route.
 - `auth.ts` — Node runtime only. Spreads `authConfig` and adds the Prisma-dependent `signIn`/`jwt` callbacks. Used by route handlers and Server Components.
+
+Session lifetime is capped at the realm's `ssoSessionMaxLifespan`, counted from Keycloak's `auth_time` (`lib/session-lifetime.ts`; inlined in finance-app's `auth.ts`). `session.maxAge` alone is **not** a cap — Auth.js re-signs the JWT cookie on every read, so it only ends idle sessions. `auth.ts`'s `jwt` callback *replaces* `auth.config.ts`'s, so the cap check lives in both.
 
 Each app sets a **distinct `cookies.sessionToken.name`** (`portal-session-token` / `financeapp-session-token`). Both apps are `localhost` on different ports and browsers share cookies across ports — without this, one app receives the other's cookie and fails to decrypt it.
 
